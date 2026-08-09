@@ -1,0 +1,14 @@
+{
+  "name": "kaiwa-trip-drill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "start:static": "python3 -m http.server 4173 --bind 0.0.0.0",
+    "test": "node --test"
+  }
+}

@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "placeholders": {
+    "nameKatakana": {
+      "value": "コロソン",
+      "confirmed": false,
+      "note": "Placeholder only. Replace this with the katakana name on the reservation."
+    }
+  },
+  "scenarios": [
+    {
+      "id": "essentials",
+      "title": "Essentials",
+      "purpose": "Finish politely or stop an exchange that goes off script.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "polite.basics", "ja": "ありがとうございました。", "meaning": "Thank you very much." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "polite.thanks.production",
+          "skillId": "polite.basics",
+          "mode": "production",
+          "prompt": "Finish a simple exchange with a polite thank-you.",
+          "answer": {
+            "ja": "ありがとうございました。",
+            "meaning": "Thank you very much.",
+            "note": "Use this as the safe ending to a short exchange."
+          }
+        },
+        {
+          "id": "abort.production",
+          "skillId": "abort.wakarimasen",
+          "mode": "production",
+          "priority": 1.2,
+          "prompt": "The conversation has gone off script. Stop it politely.",
+          "answer": {
+            "ja": "すみません、日本語がわかりません。",
+            "meaning": "Sorry, I don't understand Japanese.",
+            "note": "This is always available; it has no prerequisite. Show the screen if needed."
+          }
+        }
+      ]
+    },
+    {
+      "id": "shimamura-pickup",
+      "title": "Shimamura pickup",
+      "purpose": "Collect the Casio SXC-1 ordered from the Fukuoka store.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "shimamura.pickup", "ja": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。", "meaning": "I came to pick up the Casio SXC-1 ordered from the Fukuoka store." },
+        { "skillId": "shimamura.stock_check", "ja": "入荷していますか？", "meaning": "Has it arrived / is it in stock?" },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [
+        { "ja": "お名前は？", "meaning": "Your name?", "replySkillIds": ["identity.name_katakana"] }
+      ],
+      "items": [
+        {
+          "id": "shimamura.pickup.production",
+          "skillId": "shimamura.pickup",
+          "mode": "production",
+          "prompt": "Tell Shimamura why you are here.",
+          "answer": {
+            "ja": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。",
+            "meaning": "I came to pick up the Casio SXC-1 ordered from the Fukuoka store.",
+            "note": "This is the fixed opener. Do not improvise beyond the closed loop."
+          }
+        },
+        {
+          "id": "shimamura.stock.production",
+          "skillId": "shimamura.stock_check",
+          "mode": "production",
+          "prompt": "Ask whether the item has arrived.",
+          "answer": {
+            "ja": "入荷していますか？",
+            "meaning": "Has it arrived / is it in stock?",
+            "note": "Optional. The pickup opener may be enough."
+          }
+        }
+      ]
+    },
+    {
+      "id": "name-prompt",
+      "title": "Name prompt",
+      "purpose": "Recognize the likely staff question and show the reservation name.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "identity.name_katakana", "ja": "コロソン", "meaning": "COLSON — placeholder katakana name card" },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [
+        { "ja": "お名前は？", "meaning": "Your name?", "replySkillIds": ["identity.name_katakana"] }
+      ],
+      "items": [
+        {
+          "id": "name.prompt.recognition",
+          "skillId": "identity.name_katakana",
+          "mode": "recognition",
+          "prompt": "お名前は？",
+          "instruction": "What is staff asking?",
+          "options": [
+            { "id": "name", "label": "They are asking for my name.", "correct": true },
+            { "id": "payment", "label": "They are asking how I will pay.", "correct": false },
+            { "id": "stock", "label": "They are saying the item is out of stock.", "correct": false }
+          ],
+          "answer": {
+            "ja": "コロソン",
+            "meaning": "Show or say the katakana name on the reservation.",
+            "note": "UNCONFIRMED PLACEHOLDER: replace コロソン with the exact reservation name."
+          }
+        }
+      ]
+    },
+    {
+      "id": "hotel-refund",
+      "title": "Early checkout + refund",
+      "purpose": "Ask to check out early, then ask whether six unused nights can be refunded.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "hotel.checkout", "ja": "チェックアウトをお願いします。", "meaning": "I'd like to check out, please." },
+        { "skillId": "hotel.refund_six_nights", "ja": "六泊分残っているんですが、返金は可能でしょうか？", "meaning": "I have six nights remaining; would a refund be possible?" },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "hotel.checkout.production",
+          "skillId": "hotel.checkout",
+          "mode": "production",
+          "prompt": "Ask the office to check you out.",
+          "answer": {
+            "ja": "チェックアウトをお願いします。",
+            "meaning": "I'd like to check out, please.",
+            "note": "Use this first, before the refund question."
+          }
+        },
+        {
+          "id": "hotel.refund.production",
+          "skillId": "hotel.refund_six_nights",
+          "mode": "production",
+          "prompt": "Ask whether the six unused nights can be refunded.",
+          "answer": {
+            "ja": "六泊分残っているんですが、返金は可能でしょうか？",
+            "meaning": "I have six nights remaining; would a refund be possible?",
+            "note": "This asks, but does not assume, that a refund is available. Abort if the reply becomes open-ended."
+          }
+        }
+      ]
+    },
+    {
+      "id": "family-dinner",
+      "title": "Dinner with relatives",
+      "purpose": "Greet the host, begin the meal, and thank them afterward.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "family.greeting", "ja": "こんばんは。お世話になります。", "meaning": "Good evening. Thank you for having / looking after me." },
+        { "skillId": "family.itadakimasu", "ja": "いただきます。", "meaning": "Said before eating." },
+        { "skillId": "family.thanks_hosting", "ja": "今日はどうもありがとうございました。", "meaning": "Thank you very much for today." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "family.greeting.production",
+          "skillId": "family.greeting",
+          "mode": "production",
+          "prompt": "Greet your relatives when you arrive for dinner.",
+          "answer": {
+            "ja": "こんばんは。お世話になります。",
+            "meaning": "Good evening. Thank you for having / looking after me.",
+            "note": "Say the two short lines; no need to add an open-ended explanation."
+          }
+        },
+        {
+          "id": "family.itadakimasu.production",
+          "skillId": "family.itadakimasu",
+          "mode": "production",
+          "prompt": "Say the customary phrase before eating.",
+          "answer": {
+            "ja": "いただきます。",
+            "meaning": "Said before eating.",
+            "note": "A fixed ritual phrase, not an invitation to continue the conversation."
+          }
+        },
+        {
+          "id": "family.thanks.production",
+          "skillId": "family.thanks_hosting",
+          "mode": "production",
+          "prompt": "Thank your relatives for today.",
+          "answer": {
+            "ja": "今日はどうもありがとうございました。",
+            "meaning": "Thank you very much for today.",
+            "note": "Use near the end of the visit."
+          }
+        }
+      ]
+    }
+  ]
+}

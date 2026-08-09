@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#15211b">
+    <title>Kaiwa — trip drill</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="site-header">
+        <div>
+          <p class="eyebrow">KAIWA · TRIP LOOP</p>
+          <h1>Practice the next exchange.</h1>
+        </div>
+        <span class="offline-badge">Offline-first</span>
+      </header>
+
+      <p id="placeholder-warning" class="warning" hidden></p>
+      <p id="loading" class="loading">Loading practice pack…</p>
+      <p id="error" class="error" hidden></p>
+
+      <div id="practice-app" hidden>
+        <nav class="quick-actions" aria-label="Conversation safety tools">
+          <button id="sheet-open" type="button" class="sheet-button">Show phone sheet</button>
+          <button id="abort-open" type="button" class="abort-button">Need out? Show abort</button>
+        </nav>
+
+        <details class="route-panel">
+          <summary>Next real event</summary>
+          <p id="route-summary" class="route-summary"></p>
+          <div class="route-controls">
+            <label>
+              Scenario
+              <select id="route-scenario"></select>
+            </label>
+            <label>
+              Minutes away
+              <input id="route-minutes" inputmode="numeric" type="number" min="1" max="1440" value="30">
+            </label>
+          </div>
+          <div class="route-actions">
+            <button id="route-apply" type="button" class="small-button">Boost this route</button>
+            <button id="route-clear" type="button" class="text-button">Clear</button>
+          </div>
+        </details>
+
+        <p id="progress" class="progress"></p>
+
+        <article class="card" aria-live="polite">
+          <div class="card-meta">
+            <span id="scenario"></span>
+            <span id="mode" class="mode-badge"></span>
+          </div>
+          <p id="purpose" class="purpose"></p>
+          <h2 id="prompt" class="prompt"></h2>
+          <p id="instruction" class="instruction"></p>
+
+          <div id="options" class="options" hidden></div>
+          <button id="reveal" type="button" class="reveal-button">Reveal answer</button>
+
+          <section id="answer" class="answer" hidden>
+            <p id="recognition-result" class="recognition-result" aria-live="polite"></p>
+            <p id="japanese" class="japanese" lang="ja"></p>
+            <p id="meaning" class="meaning"></p>
+            <p id="note" class="note"></p>
+          </section>
+
+          <div id="grades" class="grades" hidden>
+            <p>How did the fixed response feel?</p>
+            <div class="grade-buttons">
+              <button type="button" data-grade="again" class="grade again">Again</button>
+              <button type="button" data-grade="hard" class="grade hard">Hard</button>
+              <button type="button" data-grade="good" class="grade good">Good</button>
+            </div>
+          </div>
+
+          <p id="evidence" class="evidence"></p>
+        </article>
+
+        <details id="roleplay-panel" class="roleplay-panel">
+          <summary>
+            <span>Optional routed roleplay</span>
+            <span id="roleplay-status" class="roleplay-status">Checking…</span>
+          </summary>
+          <div class="roleplay-body">
+            <p class="roleplay-privacy">Only this panel uses the network. Typed practice text is sent through the local proxy to the configured provider; the API key stays server-side.</p>
+            <div class="roleplay-controls">
+              <label>
+                Scenario
+                <select id="roleplay-scenario"></select>
+              </label>
+              <button id="roleplay-reset" type="button" class="text-button">Restart exchange</button>
+            </div>
+            <div id="roleplay-transcript" class="transcript" aria-live="polite"></div>
+            <p class="chip-label">Tap a fixed line or type your own attempt:</p>
+            <div id="roleplay-lines" class="line-chips"></div>
+            <label class="roleplay-input-label" for="roleplay-input">Your Japanese</label>
+            <textarea id="roleplay-input" rows="3" maxlength="500" placeholder="日本語を入力…"></textarea>
+            <button id="roleplay-send" type="button" class="reveal-button">Send practice turn</button>
+            <p id="roleplay-error" class="roleplay-error" hidden></p>
+            <section id="roleplay-observation" class="observation" hidden>
+              <h3>Sensor observation</h3>
+              <p id="roleplay-guidance" class="roleplay-guidance"></p>
+              <ul id="roleplay-outcomes"></ul>
+              <p>Review this before it changes local evidence.</p>
+              <div class="observation-actions">
+                <button id="roleplay-apply" type="button" class="small-button">Apply tested outcomes</button>
+                <button id="roleplay-discard" type="button" class="text-button">Discard</button>
+              </div>
+            </section>
+          </div>
+        </details>
+
+        <footer>
+          <button id="reset" type="button" class="text-button">Reset local progress</button>
+        </footer>
+      </div>
+    </main>
+
+    <dialog id="phone-sheet" class="sheet-dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">LIVE CONVERSATION</p>
+          <h2>Only use these lines.</h2>
+        </div>
+        <button type="button" class="dialog-close" data-close-dialog="phone-sheet" aria-label="Close phone sheet">×</button>
+      </div>
+      <label class="sheet-picker">
+        Scenario
+        <select id="sheet-scenario"></select>
+      </label>
+      <p id="sheet-purpose" class="sheet-purpose"></p>
+      <div id="sheet-lines" class="sheet-lines"></div>
+      <button type="button" class="reveal-button" data-close-dialog="phone-sheet">Back to practice</button>
+    </dialog>
+
+    <dialog id="abort-dialog" class="abort-dialog">
+      <p class="eyebrow">POLITE EXIT</p>
+      <p id="abort-japanese" class="abort-japanese" lang="ja"></p>
+      <p id="abort-meaning" class="abort-meaning"></p>
+      <p class="abort-instruction">Say it once, then show this screen.</p>
+      <button type="button" class="abort-close" data-close-dialog="abort-dialog">Close</button>
+    </dialog>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="./src/ui.js"></script>
+  </body>
+</html>

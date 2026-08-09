@@ -1,0 +1,262 @@
+:root {
+  color-scheme: light;
+  --ink: #15211b;
+  --muted: #617066;
+  --paper: #f6f2e9;
+  --card: #fffdf7;
+  --line: #d8d4c8;
+  --green: #17664b;
+  --green-dark: #0e4b36;
+  --amber: #b86a18;
+  --red: #a53d36;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(47, 124, 89, 0.14), transparent 30rem),
+    var(--paper);
+}
+
+button, input, select { font: inherit; }
+button { touch-action: manipulation; }
+dialog { color: var(--ink); }
+
+.shell {
+  width: min(100%, 44rem);
+  margin: 0 auto;
+  padding: max(1.1rem, env(safe-area-inset-top)) 1rem max(2rem, env(safe-area-inset-bottom));
+}
+
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.3rem;
+  color: var(--green);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+h1 {
+  margin: 0;
+  max-width: 22rem;
+  font-size: clamp(1.45rem, 6vw, 2.2rem);
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.offline-badge, .mode-badge {
+  border: 1px solid #87aa96;
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: #edf6ee;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding: 0.35rem 0.55rem;
+}
+
+.warning, .error {
+  border-radius: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.warning { background: #fff1c9; border: 1px solid #e3bd62; }
+.error { background: #fce5e2; border: 1px solid #d69a94; }
+.loading { color: var(--muted); }
+
+.quick-actions {
+  position: sticky;
+  top: max(0.5rem, env(safe-area-inset-top));
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin: 0 0 0.8rem;
+  border-radius: 0.8rem;
+  background: rgba(246, 242, 233, 0.94);
+  backdrop-filter: blur(0.5rem);
+  padding: 0.35rem;
+}
+
+.sheet-button, .abort-button {
+  min-height: 2.85rem;
+  border-radius: 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.sheet-button { border: 1px solid var(--green); background: var(--green-dark); color: white; }
+.abort-button { border: 1px solid var(--red); background: #fff8f6; color: var(--red); }
+
+.route-panel, .roleplay-panel {
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: rgba(255, 253, 247, 0.72);
+  padding: 0.75rem 0.85rem;
+}
+
+.route-panel summary, .roleplay-panel summary { cursor: pointer; font-weight: 750; }
+.route-summary { margin: 0.7rem 0; color: var(--muted); font-size: 0.88rem; }
+.route-controls { display: grid; grid-template-columns: 1.5fr 1fr; gap: 0.65rem; }
+.route-controls label { color: var(--muted); font-size: 0.76rem; font-weight: 700; }
+
+select, input {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  margin-top: 0.25rem;
+  border: 1px solid #aaa99f;
+  border-radius: 0.55rem;
+  background: white;
+  color: var(--ink);
+  padding: 0.55rem;
+}
+
+.route-actions { display: flex; align-items: center; gap: 1rem; margin-top: 0.7rem; }
+.small-button { border: 0; border-radius: 0.55rem; background: var(--ink); color: white; padding: 0.65rem 0.8rem; font-weight: 700; }
+.text-button { border: 0; background: transparent; color: var(--green-dark); padding: 0.45rem 0; text-decoration: underline; text-underline-offset: 0.2rem; }
+.progress { margin: 0.8rem 0; color: var(--muted); font-size: 0.78rem; }
+
+.card {
+  min-height: 29rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: var(--card);
+  box-shadow: 0 1rem 2.5rem rgba(52, 60, 51, 0.09);
+  padding: clamp(1rem, 4vw, 1.5rem);
+}
+
+.card-meta { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--green); font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; }
+.purpose { margin: 0.8rem 0 1.6rem; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
+.prompt { margin: 0; font-size: clamp(1.6rem, 7vw, 2.45rem); line-height: 1.18; letter-spacing: -0.025em; }
+.japanese-prompt { font-size: clamp(2.3rem, 11vw, 4rem); letter-spacing: 0; }
+.instruction { margin: 0.85rem 0 1.2rem; color: var(--muted); line-height: 1.4; }
+
+.reveal-button {
+  width: 100%;
+  min-height: 3.4rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: var(--green-dark);
+  color: white;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.options { display: grid; gap: 0.65rem; margin-bottom: 0.8rem; }
+.option-button { min-height: 3.25rem; border: 1px solid #aaa99f; border-radius: 0.7rem; background: white; color: var(--ink); padding: 0.7rem; text-align: left; font-weight: 650; }
+.option-button.correct { border-color: var(--green); background: #e1f2e7; }
+.option-button.incorrect { border-color: var(--red); background: #fbe8e5; }
+.option-button:disabled { color: var(--ink); opacity: 1; }
+
+.answer { margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 1.1rem; }
+.recognition-result { margin: 0 0 0.55rem; color: var(--green-dark); font-weight: 800; }
+.recognition-result:empty { display: none; }
+.japanese { margin: 0; font-size: clamp(1.85rem, 8vw, 3.2rem); font-weight: 750; line-height: 1.35; overflow-wrap: anywhere; }
+.meaning { margin: 0.75rem 0 0; font-size: 1rem; line-height: 1.45; }
+.note { margin: 0.65rem 0 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+
+.grades { margin-top: 1.25rem; }
+.grades > p { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.82rem; }
+.grade-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.55rem; }
+.grade { min-height: 3rem; border-radius: 0.65rem; background: white; font-weight: 800; }
+.again { border: 1px solid var(--red); color: var(--red); }
+.hard { border: 1px solid var(--amber); color: #854807; }
+.good { border: 1px solid var(--green); color: var(--green-dark); }
+.evidence { margin: 1rem 0 0; color: var(--muted); font-size: 0.75rem; }
+
+.roleplay-panel { margin-top: 1rem; }
+.roleplay-panel summary { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; }
+.roleplay-status { color: var(--muted); font-size: 0.72rem; font-weight: 700; }
+.roleplay-status.ready { color: var(--green); }
+.roleplay-body { padding-top: 0.7rem; }
+.roleplay-privacy { margin: 0 0 0.8rem; color: var(--muted); font-size: 0.8rem; line-height: 1.45; }
+.roleplay-controls { display: flex; align-items: end; gap: 0.8rem; }
+.roleplay-controls label { flex: 1; color: var(--muted); font-size: 0.76rem; font-weight: 700; }
+.transcript { display: grid; gap: 0.65rem; max-height: 24rem; overflow-y: auto; margin: 0.9rem 0; }
+.transcript-message { width: 90%; border-radius: 0.75rem; padding: 0.75rem; }
+.transcript-user { justify-self: end; background: #e2f1e7; }
+.transcript-assistant { justify-self: start; background: white; border: 1px solid var(--line); }
+.transcript-label { margin: 0 0 0.25rem; color: var(--muted); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
+.transcript-japanese { margin: 0; font-size: 1.2rem; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.transcript-meaning { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.8rem; }
+.chip-label { margin: 0.7rem 0 0.4rem; color: var(--muted); font-size: 0.76rem; }
+.line-chips { display: flex; gap: 0.45rem; overflow-x: auto; padding: 0 0 0.55rem; }
+.line-chip { flex: 0 0 auto; max-width: 18rem; border: 1px solid #94aa9d; border-radius: 999px; background: white; color: var(--green-dark); padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.line-chip-abort { border-color: #d59b96; color: var(--red); }
+.roleplay-input-label { display: block; margin: 0.2rem 0 0.25rem; color: var(--muted); font-size: 0.76rem; font-weight: 700; }
+textarea { display: block; width: 100%; resize: vertical; border: 1px solid #aaa99f; border-radius: 0.65rem; background: white; color: var(--ink); padding: 0.7rem; font: inherit; }
+.roleplay-body > .reveal-button { margin-top: 0.6rem; }
+.roleplay-error { border-radius: 0.6rem; background: #fce5e2; color: #7e2e29; padding: 0.65rem; font-size: 0.8rem; line-height: 1.4; }
+.observation { margin-top: 0.8rem; border: 1px solid #d5bd7c; border-radius: 0.75rem; background: #fff7df; padding: 0.75rem; }
+.observation h3 { margin: 0; font-size: 1rem; }
+.observation ul { margin: 0.6rem 0; padding-left: 1.25rem; }
+.observation li { margin: 0.25rem 0; font-size: 0.86rem; }
+.observation li[data-outcome="miss"] { color: var(--red); }
+.observation li[data-outcome="success"] { color: var(--green-dark); }
+.observation > p { color: var(--muted); font-size: 0.78rem; }
+.roleplay-guidance { color: #7a480e !important; font-weight: 750; }
+.observation-actions { display: flex; align-items: center; gap: 1rem; }
+
+footer { padding: 1rem 0; text-align: center; }
+.toast { position: fixed; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 10; translate: -50% 1rem; border-radius: 999px; background: var(--ink); color: white; padding: 0.65rem 0.9rem; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: 160ms ease; }
+.toast.visible { opacity: 1; translate: -50% 0; }
+
+.sheet-dialog, .abort-dialog {
+  width: min(calc(100% - 1rem), 42rem);
+  max-height: calc(100dvh - 1rem);
+  margin: auto;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.28);
+  padding: 1rem;
+}
+
+.sheet-dialog::backdrop, .abort-dialog::backdrop { background: rgba(15, 24, 19, 0.72); }
+.dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.dialog-header h2 { margin: 0; font-size: 1.55rem; }
+.dialog-close { width: 2.75rem; height: 2.75rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--ink); font-size: 1.6rem; line-height: 1; }
+.sheet-picker { display: block; margin-top: 1rem; color: var(--muted); font-size: 0.78rem; font-weight: 800; }
+.sheet-purpose { color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
+.sheet-lines { display: grid; gap: 0.75rem; margin: 1rem 0; }
+.sheet-line { border: 1px solid var(--line); border-radius: 0.8rem; background: white; padding: 0.9rem; }
+.sheet-line-abort { border-color: #d59b96; background: #fff4f2; }
+.sheet-japanese { margin: 0; font-size: clamp(1.45rem, 7vw, 2.5rem); font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+.sheet-meaning { margin: 0.45rem 0 0; color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
+
+.abort-dialog { text-align: center; border-color: #d59b96; }
+.abort-japanese { margin: 1.5rem 0 1rem; font-size: clamp(2.2rem, 11vw, 4.5rem); font-weight: 850; line-height: 1.35; }
+.abort-meaning { margin: 0; font-size: 1.1rem; line-height: 1.4; }
+.abort-instruction { margin: 1.2rem 0; color: var(--muted); }
+.abort-close { width: 100%; min-height: 3.2rem; border: 0; border-radius: 0.7rem; background: var(--red); color: white; font-weight: 800; }
+
+[hidden] { display: none !important; }
+
+@media (max-width: 25rem) {
+  .offline-badge { display: none; }
+  .route-controls { grid-template-columns: 1fr; }
+  .roleplay-controls { display: block; }
+  .card { min-height: 27rem; }
+  .sheet-dialog, .abort-dialog { width: calc(100% - 0.5rem); max-height: calc(100dvh - 0.5rem); padding: 0.85rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}

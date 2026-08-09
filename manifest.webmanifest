@@ -1,0 +1,19 @@
+{
+  "name": "Kaiwa Trip Drill",
+  "short_name": "Kaiwa",
+  "description": "Closed-loop Japanese practice for real trip conversations.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f2e9",
+  "theme_color": "#15211b",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

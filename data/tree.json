@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "readyThreshold": 0.6,
+  "prior": {
+    "alpha": 1,
+    "beta": 1
+  },
+  "nodes": [
+    { "id": "polite.basics", "label": "Polite basics" },
+    { "id": "abort.wakarimasen", "label": "Emergency abort" },
+    { "id": "shimamura.pickup", "label": "Shimamura pickup opener" },
+    { "id": "shimamura.stock_check", "label": "Ask whether it arrived" },
+    { "id": "identity.name_katakana", "label": "Recognize and show name" },
+    { "id": "hotel.checkout", "label": "Ask to check out" },
+    { "id": "hotel.refund_six_nights", "label": "Ask about six-night refund" },
+    { "id": "family.greeting", "label": "Dinner greeting" },
+    { "id": "family.itadakimasu", "label": "Start the meal" },
+    { "id": "family.thanks_hosting", "label": "Thank the host" }
+  ],
+  "edges": [
+    { "from": "polite.basics", "to": "shimamura.pickup" },
+    { "from": "shimamura.pickup", "to": "shimamura.stock_check" },
+    { "from": "polite.basics", "to": "identity.name_katakana" },
+    { "from": "polite.basics", "to": "hotel.checkout" },
+    { "from": "hotel.checkout", "to": "hotel.refund_six_nights" },
+    { "from": "polite.basics", "to": "family.greeting" },
+    { "from": "family.greeting", "to": "family.itadakimasu" },
+    { "from": "family.greeting", "to": "family.thanks_hosting" }
+  ]
+}

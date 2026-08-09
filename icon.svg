@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Kaiwa speech card">
+  <rect width="512" height="512" rx="112" fill="#15211b"/>
+  <path d="M104 112h304a40 40 0 0 1 40 40v176a40 40 0 0 1-40 40H248l-88 72 16-72h-72a40 40 0 0 1-40-40V152a40 40 0 0 1 40-40Z" fill="#f6f2e9"/>
+  <text x="256" y="302" text-anchor="middle" font-family="system-ui, sans-serif" font-size="164" font-weight="800" fill="#17664b">話</text>
+</svg>
