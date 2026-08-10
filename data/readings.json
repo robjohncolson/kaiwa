@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "furiganaThreshold": 0.75,
+  "furiganaMinStreak": 2,
   "entries": [
     { "id": "nihongo", "term": "日本語", "reading": "にほんご", "meaning": "Japanese language", "scenarioId": "essentials", "context": "日本語がわかりません" },
     { "id": "fukuokaten", "term": "福岡店", "reading": "ふくおかてん", "meaning": "Fukuoka store/branch", "scenarioId": "shimamura-pickup" },
@@ -171,6 +172,7 @@
     { "id": "kaishi", "term": "開始", "reading": "かいし", "meaning": "start or beginning", "scenarioId": "rural-navigation" },
     { "id": "gakusei", "term": "学生", "reading": "がくせい", "meaning": "student, especially university", "scenarioId": "school-demo" },
     { "id": "ukagau", "term": "伺う", "reading": "うかがう", "meaning": "visit or ask, humbly", "scenarioId": "family-visit" },
-    { "id": "kenpou", "term": "憲法", "reading": "けんぽう", "meaning": "constitution", "scenarioId": "history-talk" }
+    { "id": "kenpou", "term": "憲法", "reading": "けんぽう", "meaning": "constitution", "scenarioId": "history-talk" },
+    { "id": "tomatte", "term": "泊まって", "reading": "とまって", "meaning": "stay overnight", "scenarioId": "family-visit", "context": "うちに泊まっていく？" }
   ]
 }

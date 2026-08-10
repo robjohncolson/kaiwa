@@ -6,6 +6,7 @@ import { probabilityKnown } from "../src/mastery.js";
 import {
   augmentTreeWithReadings,
   createReadingItems,
+  readingIsReady,
   readingEntriesIn,
   readingSkillId,
   uncoveredKanji
@@ -122,10 +123,26 @@ test("reading BKT retires furigana after evidence and restores it after a hint",
   state = applyObservation(state, item, true, 100);
   state = applyObservation(state, item, true, 101);
   assert.ok(probabilityKnown(state.skills[item.skillId]) >= readings.furiganaThreshold);
+  assert.equal(state.skills[item.skillId].readingCheckpointStreak, 2);
+  assert.equal(readingIsReady(readings, state.skills[item.skillId]), true);
 
   state = applyObservation(state, item, false, 102, { source: "hint" });
   assert.ok(probabilityKnown(state.skills[item.skillId]) < readings.furiganaThreshold);
+  assert.equal(state.skills[item.skillId].readingCheckpointStreak, 0);
+  assert.equal(readingIsReady(readings, state.skills[item.skillId]), false);
   assert.equal(state.skills[item.skillId].observations.hint.incorrect, 1);
+});
+
+test("BKT confidence alone cannot retire furigana without consecutive no-furigana passes", async () => {
+  const readings = await readJson("../data/readings.json");
+  const skill = {
+    pKnown: 0.95,
+    readingCheckpointStreak: 1
+  };
+
+  assert.equal(readingIsReady(readings, skill), false);
+  skill.readingCheckpointStreak = 2;
+  assert.equal(readingIsReady(readings, skill), true);
 });
 
 test("longest-match tokenization keeps compound readings contextual", async () => {

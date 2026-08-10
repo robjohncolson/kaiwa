@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createInitialState, loadState, saveState, STORAGE_KEY } from "../src/store.js";
+import {
+  createInitialState,
+  createProgressBackup,
+  loadState,
+  restoreProgressBackup,
+  saveState,
+  STORAGE_KEY
+} from "../src/store.js";
 
 const tree = {
   bkt: { pKnown: 0.3, pLearn: 0.12, pGuess: 0.25, pSlip: 0.1 },
@@ -34,7 +41,7 @@ test("BKT state round-trips through browser-like storage", () => {
   const loaded = loadState(tree, storage, 200);
 
   assert.ok(storage.values.has(STORAGE_KEY));
-  assert.equal(loaded.version, 3);
+  assert.equal(loaded.version, 4);
   assert.equal(loaded.skills.one.attempts, 3);
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
@@ -42,6 +49,8 @@ test("BKT state round-trips through browser-like storage", () => {
   assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
   assert.deepEqual(loaded.focus, original.focus);
   assert.deepEqual(loaded.mission, original.mission);
+  assert.deepEqual(loaded.session, { active: null, recent: [] });
+  assert.equal(loaded.skills.one.readingCheckpointStreak, 0);
 });
 
 test("v1 Beta state migrates without discarding attempts or cram timing", () => {
@@ -70,7 +79,7 @@ test("v1 Beta state migrates without discarding attempts or cram timing", () => 
   storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
 
   const loaded = loadState(tree, storage, 200);
-  assert.equal(loaded.version, 3);
+  assert.equal(loaded.version, 4);
   assert.equal(loaded.skills.one.pKnown, 0.6);
   assert.equal(loaded.skills.one.attempts, 4);
   assert.equal(loaded.skills.one.cramDue, 500);
@@ -90,11 +99,64 @@ test("v2 state gains mission metrics and mission evidence without losing progres
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 3);
+  assert.equal(loaded.version, 4);
   assert.equal(loaded.skills.one.attempts, 2);
   assert.equal(loaded.skills.one.correct, 1);
   assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
   assert.deepEqual(loaded.mission, { active: null, stats: {} });
+  assert.deepEqual(loaded.session, { active: null, recent: [] });
+});
+
+test("v3 state gains guided sessions and honest reading checkpoints", () => {
+  const storage = memoryStorage();
+  const legacy = createInitialState(tree, 100);
+  legacy.version = 3;
+  delete legacy.session;
+  delete legacy.skills.one.readingCheckpointStreak;
+  delete legacy.skills.one.readingCheckpointPasses;
+  legacy.skills.one.pKnown = 0.9;
+  storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+  const loaded = loadState(tree, storage, 200);
+
+  assert.equal(loaded.version, 4);
+  assert.deepEqual(loaded.session, { active: null, recent: [] });
+  assert.equal(loaded.skills.one.pKnown, 0.9);
+  assert.equal(loaded.skills.one.readingCheckpointStreak, 0);
+  assert.equal(loaded.skills.one.readingCheckpointPasses, 0);
+});
+
+test("progress backups restore through current-tree migration", () => {
+  const storage = memoryStorage();
+  const original = createInitialState(tree, 100);
+  original.totalReviews = 7;
+  original.skills.one.pKnown = 0.81;
+  original.skills.one.readingCheckpointStreak = 2;
+  original.session.active = {
+    id: "guided-100",
+    phase: "cards",
+    cardIds: ["one-card"],
+    outcomes: []
+  };
+
+  const raw = createProgressBackup(original, 150);
+  const restored = restoreProgressBackup(raw, tree, storage, 200);
+
+  assert.equal(restored.version, 4);
+  assert.equal(restored.totalReviews, 7);
+  assert.equal(restored.skills.one.pKnown, 0.81);
+  assert.equal(restored.skills.one.readingCheckpointStreak, 2);
+  assert.equal(restored.session.active.id, "guided-100");
+  assert.equal(JSON.parse(storage.values.get(STORAGE_KEY)).totalReviews, 7);
+});
+
+test("progress restore rejects unrelated and unsupported JSON", () => {
+  assert.throws(() => restoreProgressBackup("{}", tree, memoryStorage()), /not a Kaiwa/);
+  assert.throws(() => restoreProgressBackup(JSON.stringify({
+    format: "kaiwa-progress",
+    version: 1,
+    state: { version: 99, skills: {} }
+  }), tree, memoryStorage()), /unsupported/);
 });
 
 test("new tree nodes are merged into saved state", () => {

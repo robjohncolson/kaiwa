@@ -1,7 +1,7 @@
 {
   "name": "Kaiwa Trip Drill",
   "short_name": "Kaiwa",
-  "description": "Closed-loop Japanese practice for real trip conversations.",
+  "description": "Five-minute closed-loop Japanese practice for real trip conversations.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

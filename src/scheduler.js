@@ -125,6 +125,13 @@ export function applyObservation(
     guessProbability: guessProbability
       ?? (["card", "mission"].includes(source) && optionCount > 1 ? 1 / optionCount : 0.05)
   });
+  const isReadingCheckpoint = item.mode === "reading" && ["card", "hint"].includes(source);
+  const checkpoint = isReadingCheckpoint ? {
+    readingCheckpointStreak: correct
+      ? (currentSkill.readingCheckpointStreak ?? 0) + 1
+      : 0,
+    readingCheckpointPasses: (currentSkill.readingCheckpointPasses ?? 0) + (correct ? 1 : 0)
+  } : {};
   let cramStep = currentSkill.cramStep;
   let cramDue = now;
   if (correct) {
@@ -138,7 +145,7 @@ export function applyObservation(
     ...state,
     skills: {
       ...state.skills,
-      [item.skillId]: { ...observed, cramStep, cramDue }
+      [item.skillId]: { ...observed, ...checkpoint, cramStep, cramDue }
     },
     lastItemId: item.id,
     totalReviews: state.totalReviews + 1,

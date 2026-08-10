@@ -57,6 +57,15 @@
           <button id="focus-clear" type="button" class="text-button">Clear focus</button>
         </div>
 
+        <section class="session-launcher" aria-labelledby="session-launch-title">
+          <div>
+            <p class="eyebrow">FIVE-MINUTE TRIP SESSION</p>
+            <h2 id="session-launch-title">Practice, read, then run the exchange.</h2>
+            <p id="session-summary" class="session-summary"></p>
+          </div>
+          <button id="session-open" type="button" class="session-open-button">Start session</button>
+        </section>
+
         <section class="mission-launcher" aria-labelledby="mission-launch-title">
           <div>
             <p class="eyebrow">OFFLINE CLOSED LOOP</p>
@@ -145,7 +154,16 @@
         </aside>
 
         <footer>
-          <button id="reset" type="button" class="text-button">Reset local progress</button>
+          <details class="progress-tools">
+            <summary>Progress backup</summary>
+            <p>Download this device's practice state, or restore it on another browser. No network is used.</p>
+            <div class="progress-tool-actions">
+              <button id="progress-export" type="button" class="small-button">Download progress</button>
+              <button id="progress-import-open" type="button" class="text-button">Restore backup</button>
+              <input id="progress-import" type="file" accept="application/json,.json" hidden>
+            </div>
+          </details>
+          <button id="reset" type="button" class="text-button reset-button">Reset local progress</button>
         </footer>
       </div>
     </main>
@@ -196,6 +214,42 @@
       <aside id="map-detail" class="map-detail" hidden></aside>
       <div id="map-islands" class="map-islands"></div>
       <button type="button" class="reveal-button map-done" data-close-dialog="skill-map-dialog">Back to practice</button>
+    </dialog>
+
+    <dialog id="session-dialog" class="session-dialog">
+      <div class="dialog-header session-dialog-header">
+        <div>
+          <p class="eyebrow">GUIDED TRIP SESSION</p>
+          <h2 id="session-title">About five minutes.</h2>
+        </div>
+        <button type="button" class="dialog-close" data-close-dialog="session-dialog" aria-label="Close guided session">×</button>
+      </div>
+
+      <section id="session-setup" class="session-setup">
+        <p>Six scheduler-selected cards: three weak phrases, three difficult readings without furigana, then one complete offline mission.</p>
+        <p id="session-plan" class="session-plan"></p>
+        <button id="session-start" type="button" class="reveal-button">Start five-minute session</button>
+      </section>
+
+      <section id="session-active" class="session-active" hidden>
+        <p id="session-progress" class="session-progress"></p>
+        <ol class="session-stages">
+          <li id="session-stage-phrases">Three weak phrases</li>
+          <li id="session-stage-readings">Three no-furigana readings</li>
+          <li id="session-stage-mission">One closed-loop mission</li>
+        </ol>
+        <button id="session-continue" type="button" class="reveal-button">Continue session</button>
+        <button id="session-end" type="button" class="text-button session-end">End session; keep recorded progress</button>
+      </section>
+
+      <section id="session-complete" class="session-complete" hidden>
+        <p id="session-outcome" class="session-outcome">Session complete</p>
+        <h3 id="session-complete-title">Trip practice complete.</h3>
+        <p id="session-complete-metrics"></p>
+        <ul id="session-results" class="session-results"></ul>
+        <button id="session-again" type="button" class="reveal-button">Build another session</button>
+        <button type="button" class="text-button session-done" data-close-dialog="session-dialog">Done</button>
+      </section>
     </dialog>
 
     <dialog id="mission-dialog" class="mission-dialog">

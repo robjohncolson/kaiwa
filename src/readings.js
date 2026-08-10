@@ -1,4 +1,11 @@
+import { probabilityKnown } from "./mastery.js";
+
 const HAN = /\p{Script=Han}/u;
+
+export function readingIsReady(readings, skillState) {
+  return probabilityKnown(skillState) >= (readings.furiganaThreshold ?? 0.75)
+    && (skillState?.readingCheckpointStreak ?? 0) >= (readings.furiganaMinStreak ?? 2);
+}
 
 export function readingSkillId(entry) {
   return `reading.${entry.id}`;

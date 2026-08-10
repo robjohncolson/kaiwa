@@ -13,12 +13,28 @@ import {
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
+  readingIsReady,
   readingEntriesIn,
   readingSkillId,
   tokenizeReadings
 } from "./readings.js";
 import { applyObservation, flattenItems, selectNextItem } from "./scheduler.js";
-import { clearState, createInitialState, loadState, saveState } from "./store.js";
+import {
+  archiveCompletedSession,
+  buildGuidedSession,
+  completeGuidedSession,
+  currentSessionCard,
+  recordSessionCard,
+  summarizeGuidedSession
+} from "./session.js";
+import {
+  clearState,
+  createInitialState,
+  createProgressBackup,
+  loadState,
+  restoreProgressBackup,
+  saveState
+} from "./store.js";
 
 const dom = {
   loading: document.querySelector("#loading"),
@@ -35,6 +51,26 @@ const dom = {
   mapClearFocus: document.querySelector("#map-clear-focus"),
   mapDetail: document.querySelector("#map-detail"),
   mapIslands: document.querySelector("#map-islands"),
+  sessionOpen: document.querySelector("#session-open"),
+  sessionSummary: document.querySelector("#session-summary"),
+  sessionDialog: document.querySelector("#session-dialog"),
+  sessionTitle: document.querySelector("#session-title"),
+  sessionSetup: document.querySelector("#session-setup"),
+  sessionPlan: document.querySelector("#session-plan"),
+  sessionStart: document.querySelector("#session-start"),
+  sessionActive: document.querySelector("#session-active"),
+  sessionProgress: document.querySelector("#session-progress"),
+  sessionStagePhrases: document.querySelector("#session-stage-phrases"),
+  sessionStageReadings: document.querySelector("#session-stage-readings"),
+  sessionStageMission: document.querySelector("#session-stage-mission"),
+  sessionContinue: document.querySelector("#session-continue"),
+  sessionEnd: document.querySelector("#session-end"),
+  sessionComplete: document.querySelector("#session-complete"),
+  sessionOutcome: document.querySelector("#session-outcome"),
+  sessionCompleteTitle: document.querySelector("#session-complete-title"),
+  sessionCompleteMetrics: document.querySelector("#session-complete-metrics"),
+  sessionResults: document.querySelector("#session-results"),
+  sessionAgain: document.querySelector("#session-again"),
   missionOpen: document.querySelector("#mission-open"),
   missionSummary: document.querySelector("#mission-summary"),
   missionDialog: document.querySelector("#mission-dialog"),
@@ -115,6 +151,9 @@ const dom = {
   roleplayOutcomes: document.querySelector("#roleplay-outcomes"),
   roleplayApply: document.querySelector("#roleplay-apply"),
   roleplayDiscard: document.querySelector("#roleplay-discard"),
+  progressExport: document.querySelector("#progress-export"),
+  progressImportOpen: document.querySelector("#progress-import-open"),
+  progressImport: document.querySelector("#progress-import"),
   reset: document.querySelector("#reset"),
   toast: document.querySelector("#toast")
 };
@@ -139,7 +178,7 @@ let completedMissionWeakestSkillId = null;
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
-  return !skill || probabilityKnown(skill) < readings.furiganaThreshold;
+  return !skill || !readingIsReady(readings, skill);
 }
 
 function renderJapanese(element, value, { alwaysShow = false, neverShow = false } = {}) {
@@ -399,6 +438,180 @@ function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
 }
 
+function guidedSession() {
+  return state.session?.active ?? null;
+}
+
+function guidedMission(session = guidedSession()) {
+  return missionById(missionPack, session?.missionId);
+}
+
+function renderSessionLauncher() {
+  const session = guidedSession();
+  if (!session) {
+    dom.sessionSummary.textContent = "3 weak phrases · 3 no-furigana readings · 1 complete mission";
+    dom.sessionOpen.textContent = "Start session";
+    return;
+  }
+  if (session.phase === "cards") {
+    dom.sessionSummary.textContent = `${session.outcomes.length}/${session.cardIds.length} cards complete · progress survives refresh`;
+    dom.sessionOpen.textContent = "Continue session";
+    return;
+  }
+  if (session.phase === "mission") {
+    dom.sessionSummary.textContent = `Cards complete · next: ${guidedMission(session)?.title ?? "closed-loop mission"}`;
+    dom.sessionOpen.textContent = state.mission.active ? "Resume mission" : "Run mission";
+    return;
+  }
+  dom.sessionSummary.textContent = `${session.outcomes.filter((outcome) => outcome.correct).length}/${session.cardIds.length} cards · mission ${session.missionOutcome ?? "complete"}`;
+  dom.sessionOpen.textContent = "View summary";
+}
+
+function setStageStatus(element, status) {
+  element.dataset.status = status;
+}
+
+function renderSessionSetup() {
+  const preview = buildGuidedSession({ items, tree, readings, missionPack, state });
+  const mission = guidedMission(preview);
+  dom.sessionTitle.textContent = "About five minutes.";
+  dom.sessionSetup.hidden = false;
+  dom.sessionActive.hidden = true;
+  dom.sessionComplete.hidden = true;
+  dom.sessionPlan.textContent = `Kaiwa will finish with “${mission.title},” selected from your weak skills, route urgency, and mission history.`;
+}
+
+function renderSessionActive(session) {
+  const phraseDone = session.outcomes.filter((outcome) => outcome.mode !== "reading").length;
+  const readingDone = session.outcomes.filter((outcome) => outcome.mode === "reading").length;
+  const phraseTotal = session.phraseSkillIds.length;
+  const readingTotal = session.readingSkillIds.length;
+  dom.sessionTitle.textContent = "Guided session in progress.";
+  dom.sessionSetup.hidden = true;
+  dom.sessionActive.hidden = false;
+  dom.sessionComplete.hidden = true;
+  dom.sessionProgress.textContent = session.phase === "mission"
+    ? `All ${session.cardIds.length} cards complete. Finish “${guidedMission(session)?.title ?? "the selected mission"}.”`
+    : `Card ${session.outcomes.length + 1} of ${session.cardIds.length} · ${phraseDone} phrases and ${readingDone} readings complete`;
+  setStageStatus(dom.sessionStagePhrases, phraseDone >= phraseTotal ? "done" : "current");
+  setStageStatus(dom.sessionStageReadings, readingDone >= readingTotal
+    ? "done"
+    : phraseDone >= phraseTotal ? "current" : "upcoming");
+  setStageStatus(dom.sessionStageMission, session.phase === "mission" ? "current" : "upcoming");
+  dom.sessionContinue.textContent = session.phase === "mission"
+    ? state.mission.active ? "Resume selected mission" : "Start selected mission"
+    : "Continue cards";
+}
+
+function appendSessionResult(titleText, values, emptyText) {
+  const item = document.createElement("li");
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const detail = document.createElement("span");
+  if (values.length > 0) renderJapanese(detail, values.join(" · "), { alwaysShow: true });
+  else detail.textContent = emptyText;
+  item.append(title, detail);
+  dom.sessionResults.append(item);
+}
+
+function renderSessionComplete(session) {
+  const summary = summarizeGuidedSession(session, { state, tree, readings, items });
+  const seconds = Math.round(summary.durationMs / 1000);
+  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  dom.sessionTitle.textContent = "Session result";
+  dom.sessionSetup.hidden = true;
+  dom.sessionActive.hidden = true;
+  dom.sessionComplete.hidden = false;
+  dom.sessionOutcome.textContent = `Mission ${summary.missionOutcome ?? "complete"}`;
+  dom.sessionCompleteTitle.textContent = summary.missionOutcome === "clean"
+    ? "Closed loop complete."
+    : summary.missionOutcome === "recovered"
+      ? "You recovered safely."
+      : "The loop needs another run.";
+  dom.sessionCompleteMetrics.textContent = `${summary.correctCards}/${summary.cardsTotal} cards correct · ${duration} · all progress saved locally`;
+  dom.sessionResults.replaceChildren();
+  appendSessionResult(
+    "Furigana retired this session",
+    summary.newlyRetiredReadings.map((item) => item.prompt),
+    "None yet. A reading needs BKT confidence and two consecutive unaided passes."
+  );
+  appendSessionResult(
+    "Still needs furigana",
+    summary.needsFurigana.map((item) => item.prompt),
+    "All readings selected for this session passed the retirement gate."
+  );
+  appendSessionResult(
+    "Phrases newly ready",
+    summary.newlyReadyPhrases.map((item) => skillLabel(item.skillId)),
+    "No phrase crossed the ready threshold in this session."
+  );
+  appendSessionResult(
+    "Practice next",
+    summary.weakestPhrases.slice(0, 2).map((item) => skillLabel(item.skillId)),
+    "The selected phrases are ready; the scheduler will choose the next weak branch."
+  );
+}
+
+function renderSessionDialog() {
+  const session = guidedSession();
+  if (!session) renderSessionSetup();
+  else if (session.phase === "complete") renderSessionComplete(session);
+  else renderSessionActive(session);
+}
+
+function openSessionDialog() {
+  renderSessionDialog();
+  dom.sessionDialog.showModal();
+}
+
+function startGuidedSession() {
+  if (state.mission.active) {
+    if (dom.sessionDialog.open) dom.sessionDialog.close();
+    showToast("Finish the active mission first");
+    openMissionDialog();
+    return;
+  }
+  const archived = archiveCompletedSession(state.session);
+  const cleanState = { ...state, session: archived };
+  const active = buildGuidedSession({ items, tree, readings, missionPack, state: cleanState });
+  state = { ...cleanState, session: { ...archived, active } };
+  saveState(state);
+  if (dom.sessionDialog.open) dom.sessionDialog.close();
+  renderCard();
+  document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast("Five-minute session started");
+}
+
+function continueGuidedSession() {
+  const session = guidedSession();
+  if (!session) {
+    startGuidedSession();
+    return;
+  }
+  if (session.phase === "cards") {
+    if (dom.sessionDialog.open) dom.sessionDialog.close();
+    renderCard();
+    document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
+  }
+  if (session.phase === "mission") {
+    if (dom.sessionDialog.open) dom.sessionDialog.close();
+    if (state.mission.active?.missionId === session.missionId) openMissionDialog();
+    else startMission(session.missionId, false);
+    return;
+  }
+  renderSessionDialog();
+}
+
+function endGuidedSession() {
+  if (!window.confirm("End this guided session? Card and mission evidence already recorded will remain.")) return;
+  state = { ...state, session: { ...state.session, active: null } };
+  saveState(state);
+  dom.sessionDialog.close();
+  renderCard();
+  showToast("Session ended; progress kept");
+}
+
 function statsForMission(missionId) {
   return state.mission.stats[missionId] ?? {
     runs: 0,
@@ -532,7 +745,7 @@ function renderMissionStep() {
     ? "Challenge run · furigana and choice meanings hidden"
     : readingEntries.length === 0
       ? "This turn uses kana only"
-      : `${shownReadings} supported · ${readingEntries.length - shownReadings} retired by reading BKT`;
+      : `${shownReadings} supported · ${readingEntries.length - shownReadings} retired by reading checks`;
   dom.missionPromptMeaning.textContent = step.meaning;
   dom.missionPromptMeaning.hidden = !run.currentHintUsed && !run.awaitingAdvance;
   dom.missionHint.hidden = run.awaitingAdvance;
@@ -548,6 +761,8 @@ function renderMissionStep() {
     button.type = "button";
     button.className = "mission-option";
     button.disabled = run.awaitingAdvance;
+    button.dataset.skillId = skillId;
+    button.dataset.correct = String(skillId === step.targetSkillId);
     const japanese = document.createElement("span");
     japanese.className = "mission-option-japanese";
     japanese.lang = "ja";
@@ -626,6 +841,7 @@ function startMission(missionId = dom.missionSelect.value, hideFurigana = dom.mi
   dom.missionSelect.value = mission.id;
   saveMissionRun(createMissionRun(mission, Date.now(), { hideFurigana }));
   renderMissionStep();
+  if (!dom.missionDialog.open) dom.missionDialog.showModal();
 }
 
 function openMissionDialog() {
@@ -878,7 +1094,7 @@ function renderMapIsland(model, island) {
     readingCluster.dataset.next = String(island.nextReading);
     readingCluster.setAttribute("aria-label", `Practice ${island.title} readings`);
     const total = document.createElement("strong");
-    total.textContent = `Reading cluster · ${island.readingReady}/${island.readingTotal} furigana-ready`;
+    total.textContent = `Reading cluster · ${island.readingReady}/${island.readingTotal} furigana retired`;
     const weakest = document.createElement("span");
     const weakText = island.weakestReadings
       .map((entry) => entry.term)
@@ -920,7 +1136,27 @@ function showAnswer(resultText = "") {
   dom.answer.hidden = false;
   dom.reveal.hidden = true;
   dom.nextCard.hidden = false;
+  const session = guidedSession();
+  dom.nextCard.textContent = session?.phase === "mission"
+    ? "Start session mission"
+    : session?.phase === "cards" ? "Next session card" : "Next card";
   dom.result.textContent = resultText;
+}
+
+function applyCardAnswer(item, correct, now = Date.now()) {
+  const active = guidedSession();
+  const sessionItem = currentSessionCard(active, items);
+  state = applyObservation(state, item, correct, now);
+  if (sessionItem?.id === item.id) {
+    state = {
+      ...state,
+      session: {
+        ...state.session,
+        active: recordSessionCard(active, item, correct, now)
+      }
+    };
+  }
+  saveState(state);
 }
 
 function renderOptions(item) {
@@ -936,8 +1172,7 @@ function renderOptions(item) {
     button.dataset.correct = String(option.correct);
     button.addEventListener("click", () => {
       if (answered) return;
-      state = applyObservation(state, item, option.correct);
-      saveState(state);
+      applyCardAnswer(item, option.correct);
       for (const sibling of dom.options.children) {
         sibling.disabled = true;
         if (sibling.dataset.correct === "true") sibling.classList.add("correct");
@@ -946,6 +1181,7 @@ function renderOptions(item) {
       showAnswer(option.correct ? "Correct — BKT updated." : "Not this one — BKT recorded a miss.");
       renderEvidence();
       renderProgress();
+      renderSessionLauncher();
     });
     dom.options.append(button);
   }
@@ -957,7 +1193,10 @@ function renderPromptFurigana() {
   const entries = readingEntriesIn(currentItem.prompt, readings);
 
   if (isReadingTest) {
-    dom.furiganaStatus.textContent = "Reading test · furigana hidden until the answer";
+    const skill = state.skills[currentItem.skillId];
+    const streak = skill?.readingCheckpointStreak ?? 0;
+    const needed = readings.furiganaMinStreak ?? 2;
+    dom.furiganaStatus.textContent = `No-furigana checkpoint · ${Math.min(streak, needed)}/${needed} consecutive passes`;
     dom.furiganaHelp.hidden = true;
     return;
   }
@@ -969,7 +1208,7 @@ function renderPromptFurigana() {
 
   const retired = entries.filter((entry) => !showReadingFor(entry) && !forcedFurigana.has(entry.id));
   const shown = entries.length - retired.length;
-  dom.furiganaStatus.textContent = `${shown} supported · ${retired.length} retired by reading BKT`;
+  dom.furiganaStatus.textContent = `${shown} supported · ${retired.length} retired by reading checks`;
   dom.furiganaHelp.hidden = retired.length === 0;
   dom.furiganaHelp.textContent = `Show ${retired.length} retired ${retired.length === 1 ? "reading" : "readings"}`;
 }
@@ -984,6 +1223,7 @@ function showRetiredFurigana() {
     state = applyObservation(state, {
       id: `hint.${entry.id}.${now}`,
       skillId: readingSkillId(entry),
+      mode: "reading",
       options: [{}, {}, {}]
     }, false, now + index, { source: "hint" });
     forcedFurigana.add(entry.id);
@@ -996,8 +1236,7 @@ function showRetiredFurigana() {
 
 function recordUnsure() {
   if (answered) return;
-  state = applyObservation(state, currentItem, false);
-  saveState(state);
+  applyCardAnswer(currentItem, false);
   for (const button of dom.options.children) {
     button.disabled = true;
     if (button.dataset.correct === "true") button.classList.add("correct");
@@ -1005,16 +1244,23 @@ function recordUnsure() {
   showAnswer("Shown as a miss — uncertainty is evidence too.");
   renderEvidence();
   renderProgress();
+  renderSessionLauncher();
 }
 
 function renderEvidence() {
   const skill = state.skills[currentItem.skillId];
   const known = Math.round(probabilityKnown(skill) * 100);
   const minimumCorrect = tree.readyMinCorrect ?? 2;
-  const readiness = skillIsReady(tree, skill)
-    ? "ready"
-    : `${Math.min(skill.correct, minimumCorrect)}/${minimumCorrect} confirmations`;
-  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${readiness}`;
+  const isReading = currentItem.mode === "reading";
+  const readiness = isReading
+    ? readingIsReady(readings, skill) ? "reading secure" : "furigana still supported"
+    : skillIsReady(tree, skill)
+      ? "ready"
+      : `${Math.min(skill.correct, minimumCorrect)}/${minimumCorrect} confirmations`;
+  const readingGate = isReading
+    ? ` · checkpoint ${Math.min(skill.readingCheckpointStreak ?? 0, readings.furiganaMinStreak ?? 2)}/${readings.furiganaMinStreak ?? 2}`
+    : "";
+  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${readiness}${readingGate}`;
 }
 
 function renderProgress() {
@@ -1043,7 +1289,7 @@ function renderRoute() {
 }
 
 function renderCard() {
-  currentItem = selectNextItem(items, tree, state);
+  currentItem = currentSessionCard(guidedSession(), items) ?? selectNextItem(items, tree, state);
   if (!currentItem) {
     throw new Error("No practice item is available. Check the skill DAG and content pack.");
   }
@@ -1082,6 +1328,7 @@ function renderCard() {
   renderRoute();
   renderFocus();
   renderMissionSummary();
+  renderSessionLauncher();
 }
 
 function populateRouteScenarios() {
@@ -1102,7 +1349,63 @@ function populateMissions() {
   }
 }
 
+function downloadProgress() {
+  const blob = new Blob([createProgressBackup(state)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `kaiwa-progress-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Progress backup downloaded");
+}
+
+function sessionIsValid(session) {
+  if (!session) return true;
+  if (!new Set(["cards", "mission", "complete"]).has(session.phase)) return false;
+  if (!Array.isArray(session.cardIds) || !Array.isArray(session.outcomes)) return false;
+  if (session.outcomes.length > session.cardIds.length) return false;
+  if (!session.cardIds.every((id) => items.some((item) => item.id === id))) return false;
+  return Boolean(missionById(missionPack, session.missionId));
+}
+
+function repairActivityState() {
+  let repaired = false;
+  if (state.mission.active && !missionById(missionPack, state.mission.active.missionId)) {
+    state = { ...state, mission: { ...state.mission, active: null } };
+    repaired = true;
+  }
+  if (!sessionIsValid(state.session?.active)) {
+    state = { ...state, session: { ...state.session, active: null } };
+    repaired = true;
+  }
+  if (repaired) saveState(state);
+}
+
+async function restoreProgressFile(file) {
+  if (!file) return;
+  try {
+    state = restoreProgressBackup(await file.text(), tree);
+    repairActivityState();
+    completedMissionRun = null;
+    completedMissionWeakestSkillId = null;
+    renderCard();
+    showToast("Progress restored");
+  } catch (error) {
+    showToast(error.message);
+  } finally {
+    dom.progressImport.value = "";
+  }
+}
+
 function bindEvents() {
+  dom.sessionOpen.addEventListener("click", openSessionDialog);
+  dom.sessionStart.addEventListener("click", startGuidedSession);
+  dom.sessionContinue.addEventListener("click", continueGuidedSession);
+  dom.sessionEnd.addEventListener("click", endGuidedSession);
+  dom.sessionAgain.addEventListener("click", startGuidedSession);
   dom.missionOpen.addEventListener("click", openMissionDialog);
   dom.missionSelect.addEventListener("change", renderMissionLobby);
   dom.missionStart.addEventListener("click", () => startMission());
@@ -1118,9 +1421,26 @@ function bindEvents() {
     const run = advanceMissionRun(active, mission);
     if (run.completed) {
       state = { ...state, mission: recordMissionCompletion(state.mission, run) };
+      const session = guidedSession();
+      const completedGuided = session?.phase === "mission" && session.missionId === run.missionId;
+      if (completedGuided) {
+        state = {
+          ...state,
+          session: {
+            ...state.session,
+            active: completeGuidedSession(session, run, run.completedAt)
+          }
+        };
+      }
       saveState(state);
       renderCard();
-      renderMissionComplete(run);
+      if (completedGuided) {
+        dom.missionDialog.close();
+        renderSessionDialog();
+        dom.sessionDialog.showModal();
+      } else {
+        renderMissionComplete(run);
+      }
       return;
     }
     saveMissionRun(run);
@@ -1183,7 +1503,13 @@ function bindEvents() {
   });
   dom.reveal.addEventListener("click", recordUnsure);
   dom.furiganaHelp.addEventListener("click", showRetiredFurigana);
-  dom.nextCard.addEventListener("click", renderCard);
+  dom.nextCard.addEventListener("click", () => {
+    if (guidedSession()?.phase === "mission") continueGuidedSession();
+    else renderCard();
+  });
+  dom.progressExport.addEventListener("click", downloadProgress);
+  dom.progressImportOpen.addEventListener("click", () => dom.progressImport.click());
+  dom.progressImport.addEventListener("change", () => restoreProgressFile(dom.progressImport.files?.[0]));
   dom.routeApply.addEventListener("click", () => {
     const minutes = Number(dom.routeMinutes.value);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
@@ -1235,10 +1561,7 @@ async function start() {
     readingSkillIds = new Set(readings.entries.map(readingSkillId));
     items = flattenItems(content, readings);
     state = loadState(tree);
-    if (state.mission.active && !missionById(missionPack, state.mission.active.missionId)) {
-      state = { ...state, mission: { ...state.mission, active: null } };
-      saveState(state);
-    }
+    repairActivityState();
 
     const name = content.placeholders.nameKatakana;
     dom.placeholder.textContent = `${name.value} is an unconfirmed placeholder. Replace it with the exact reservation name.`;

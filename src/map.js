@@ -1,5 +1,5 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
-import { readingSkillId } from "./readings.js";
+import { readingIsReady, readingSkillId } from "./readings.js";
 import { isSkillUnlocked, prerequisitesFor } from "./scheduler.js";
 
 const NODE_WIDTH = 176;
@@ -145,10 +145,13 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
     const readingStats = scenarioReadings
       .map((entry) => ({
         entry,
-        known: probabilityKnown(state.skills[readingSkillId(entry)])
+        known: probabilityKnown(state.skills[readingSkillId(entry)]),
+        ready: readingIsReady(readings, state.skills[readingSkillId(entry)])
       }))
-      .sort((a, b) => a.known - b.known || a.entry.term.localeCompare(b.entry.term));
-    const readyReadings = readingStats.filter((entry) => entry.known >= readings.furiganaThreshold).length;
+      .sort((a, b) => Number(a.ready) - Number(b.ready)
+        || a.known - b.known
+        || a.entry.term.localeCompare(b.entry.term));
+    const readyReadings = readingStats.filter((entry) => entry.ready).length;
 
     return {
       id: scenario.id,
