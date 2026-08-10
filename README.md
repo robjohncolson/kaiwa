@@ -1,6 +1,8 @@
 # Kaiwa
 
-Phone-first, closed-loop Japanese trip practice: fixed production lines, staff-line recognition, a pinned abort, a prerequisite tree, and cram scheduling. Cards and progress always work without an API key or internet connection.
+Phone-first Japanese trip practice. Every offline card starts with Japanese and asks for its meaning, the correct fixed reply, or the reading of a difficult/local term. A prerequisite DAG and a small fixed-parameter BKT model choose the next skill; optional HTTP roleplay is a reviewed sensor, never the mastery authority.
+
+Live: [GitHub Pages](https://robjohncolson.github.io/kaiwa/) · [Vercel](https://kaiwa-nine.vercel.app/)
 
 ## Run
 
@@ -8,28 +10,24 @@ Phone-first, closed-loop Japanese trip practice: fixed production lines, staff-l
 npm start
 ```
 
-Open `http://127.0.0.1:4173`. For a phone on the same trusted LAN, run `KAIWA_HOST=0.0.0.0 npm start`, find the laptop address with `hostname -I`, and open `http://LAPTOP_IP:4173`. No install or build step is needed. Run all checks with `npm test`.
-
-The manifest and service worker cache the full drill shell after its first load from HTTPS or `localhost`; browsers do not allow service-worker installation from a plain `http://LAPTOP_IP` origin. The LAN URL still needs no internet, but the laptop server must remain running.
+Open `http://127.0.0.1:4173`. No install, build, API key, or network is needed for cards. Run checks with `npm test`. On a trusted LAN, use `KAIWA_HOST=0.0.0.0 npm start`, then open `http://LAPTOP_IP:4173` on the phone. Install from either HTTPS deployment for a service-worker-backed offline copy.
 
 ## State and content
 
-Progress lives in `localStorage` under `kaiwa.practice-state.v1`, separately per browser. Each skill stores overall Beta evidence plus distinct production, recognition, and roleplay evidence. Good advances 2m → 10m → 30m → 2h; Hard waits 1m; Again is immediately due. `longDue` is reserved but inactive. Route urgency may outrank an ordinary due card but never bypasses prerequisites.
+Progress stays in this browser's `localStorage` at `kaiwa.practice-state.v1`. State schema v2 stores per-skill `pKnown`, fixed `pLearn/pGuess/pSlip`, correct/missed counts, source counts, a 2m → 10m → 30m → 2h cram step, and an inactive `longDue`. Old Beta state migrates automatically. A correct three-choice card or approved roleplay result updates BKT; “Not sure,” a wrong choice, roleplay `partial`, or roleplay `miss` is a miss. Route urgency can pull a scenario forward but cannot bypass prerequisites.
 
-`data/scenarios.json` contains closed loops, allowed lines, staff prompts, and drill items. `data/tree.json` contains skill nodes and prerequisite edges. Add each new item `skillId` to the tree; recognition items need exactly one correct option. `npm test` checks skill coverage and graph cycles.
+To add a scenario, add its closed-loop `allowedUserLines` and Japanese-first `items` in `data/scenarios.json`, then add every `skillId` and prerequisite edge in `data/tree.json`. Each item needs mode `meaning`, `reply`, or `focus`, exactly three options with one correct answer, and an answer reading. Give difficult or local terms a `zoom` context and breakdown. Tests enforce coverage, choices, and an acyclic graph.
 
-`コロソン` is an **unconfirmed placeholder**. Replace all occurrences in `data/scenarios.json` with the exact katakana reservation name before real use.
+`コロソン` is an **unconfirmed placeholder**; replace it with the exact katakana reservation name. The public seed deliberately omits private addresses, coordinates, phone numbers, schedules, and relatives' names.
 
-## Optional routed roleplay
+## Optional roleplay
 
 Set all three server-side variables to enable the collapsed roleplay panel:
 
-- `KAIWA_LLM_BASE_URL` — OpenAI-compatible API base including `/v1`; HTTPS required except loopback.
-- `KAIWA_LLM_API_KEY` — secret read only by the Node proxy; never returned to browser code.
-- `KAIWA_LLM_MODEL` — exact provider model identifier.
+- `KAIWA_LLM_BASE_URL` — OpenAI-compatible API base including `/v1`; HTTPS except loopback.
+- `KAIWA_LLM_API_KEY` — secret held by the server proxy.
+- `KAIWA_LLM_MODEL` — provider model identifier.
 
-Optional server settings are `KAIWA_HOST` (default `127.0.0.1`) and `KAIWA_PORT` (default `4173`). Only expose a key-backed proxy with `KAIWA_HOST=0.0.0.0` on a trusted LAN.
+Optional `KAIWA_HOST` and `KAIWA_PORT` default to `127.0.0.1` and `4173`. The proxy requests structured JSON, validates scenario skill IDs locally, exposes observations for review, and changes BKT only after **Apply tested outcomes**. Provider failure never blocks offline practice.
 
-The proxy first requests strict JSON Schema output, falls back once to JSON-object mode for compatible providers, and validates every skill/outcome locally. Model observations are shown for review and change evidence only after the user presses **Apply tested outcomes**. Provider failure never blocks the offline drill.
-
-Core paths: `src/mastery.js`, `src/scheduler.js`, `src/store.js`, `src/ui.js`, `server/roleplay.js`, and `server.js`.
+Core paths: `data/`, `src/mastery.js`, `src/scheduler.js`, `src/store.js`, `src/ui.js`, and `server/roleplay.js`.
