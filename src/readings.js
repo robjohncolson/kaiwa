@@ -1,7 +1,7 @@
 const HAN = /\p{Script=Han}/u;
 
 export function readingSkillId(entry) {
-  return entry.skillId ?? `reading.${entry.id}`;
+  return `reading.${entry.id}`;
 }
 
 export function augmentTreeWithReadings(tree, readings) {

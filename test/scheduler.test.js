@@ -33,13 +33,16 @@ const items = [
   { id: "c-child", skillId: "child", scenarioId: "normal", options }
 ];
 
-test("one correct objective observation unlocks a direct prerequisite", () => {
+test("a prerequisite needs BKT confidence and two correct observations", () => {
   const initial = createInitialState(tree, NOW);
   assert.equal(isSkillUnlocked(tree, initial.skills, "child"), false);
 
-  const practiced = applyObservation(initial, items[0], true, NOW);
-  assert.ok(probabilityKnown(practiced.skills.root) > tree.readyThreshold);
-  assert.equal(isSkillUnlocked(tree, practiced.skills, "child"), true);
+  const once = applyObservation(initial, items[0], true, NOW);
+  assert.ok(probabilityKnown(once.skills.root) > tree.readyThreshold);
+  assert.equal(isSkillUnlocked(tree, once.skills, "child"), false);
+
+  const twice = applyObservation(once, items[0], true, NOW + 1);
+  assert.equal(isSkillUnlocked(tree, twice.skills, "child"), true);
 });
 
 test("answering a card changes the next selection", () => {

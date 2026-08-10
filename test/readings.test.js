@@ -43,10 +43,11 @@ function learnerSurfaces(content) {
 }
 
 test("every learner-facing kanji is covered by context-specific ruby data", async () => {
-  const [content, tree, readings] = await Promise.all([
+  const [content, tree, readings, missions] = await Promise.all([
     readJson("../data/scenarios.json"),
     readJson("../data/tree.json"),
-    readJson("../data/readings.json")
+    readJson("../data/readings.json"),
+    readJson("../data/missions.json")
   ]);
 
   for (const [label, value] of learnerSurfaces(content)) {
@@ -54,6 +55,11 @@ test("every learner-facing kanji is covered by context-specific ruby data", asyn
   }
   for (const node of tree.nodes) {
     assert.equal(uncoveredKanji(node.label, readings), "", `${node.id} map label has unannotated kanji: ${node.label}`);
+  }
+  for (const mission of missions.missions) {
+    for (const step of mission.steps) {
+      assert.equal(uncoveredKanji(step.prompt, readings), "", `${mission.id}.${step.id} has unannotated kanji: ${step.prompt}`);
+    }
   }
 });
 
@@ -75,7 +81,30 @@ test("every ruby entry generates an objective reading card and BKT skill", async
     assert.equal(item.options.length, 3);
     assert.equal(item.options.filter((option) => option.correct).length, 1);
     assert.ok(nodeIds.has(readingSkillId(entry)), `Missing BKT node for ${entry.term}`);
+    assert.notEqual(readingSkillId(entry), entry.skillId, `${entry.term} reading must not share phrase BKT`);
   }
+});
+
+test("phrase and mission evidence cannot retire a reading's furigana", async () => {
+  const [content, baseTree, readings] = await Promise.all([
+    readJson("../data/scenarios.json"),
+    readJson("../data/tree.json"),
+    readJson("../data/readings.json")
+  ]);
+  const tree = augmentTreeWithReadings(baseTree, readings);
+  const entry = readings.entries.find((candidate) => candidate.id === "toriyose");
+  const phraseItem = content.scenarios
+    .flatMap((scenario) => scenario.items)
+    .find((candidate) => candidate.skillId === entry.skillId);
+  let state = createInitialState(tree, 100);
+  const initialReading = probabilityKnown(state.skills[readingSkillId(entry)]);
+
+  state = applyObservation(state, phraseItem, true, 100);
+  state = applyObservation(state, phraseItem, true, 101, { source: "mission" });
+
+  assert.ok(probabilityKnown(state.skills[entry.skillId]) > initialReading);
+  assert.equal(probabilityKnown(state.skills[readingSkillId(entry)]), initialReading);
+  assert.equal(state.skills[readingSkillId(entry)].attempts, 0);
 });
 
 test("reading BKT retires furigana after evidence and restores it after a hint", async () => {

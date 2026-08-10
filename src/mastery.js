@@ -1,4 +1,4 @@
-const SOURCES = Object.freeze(["card", "roleplay", "hint"]);
+const SOURCES = Object.freeze(["card", "mission", "roleplay", "hint"]);
 
 function clampProbability(value, fallback) {
   return Number.isFinite(value) ? Math.min(0.999, Math.max(0.001, value)) : fallback;
@@ -10,6 +10,13 @@ export function probabilityKnown(skillState) {
   // Compatibility for the v1 Beta state. store.js converts this permanently.
   const total = (skillState?.alpha ?? 0) + (skillState?.beta ?? 0);
   return total > 0 ? skillState.alpha / total : 0.3;
+}
+
+export function skillIsReady(tree, skillState) {
+  const threshold = tree.readyThreshold ?? 0.55;
+  const minimumCorrect = tree.readyMinCorrect ?? 2;
+  return probabilityKnown(skillState) >= threshold
+    && (skillState?.correct ?? 0) >= minimumCorrect;
 }
 
 export function observeBkt(

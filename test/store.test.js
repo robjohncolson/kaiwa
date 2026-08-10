@@ -25,17 +25,23 @@ test("BKT state round-trips through browser-like storage", () => {
   original.skills.one.pKnown = 0.72;
   original.totalReviews = 3;
   original.focus = { scenarioId: "family", skillId: "one", mode: null };
+  original.mission = {
+    active: { missionId: "family-loop", stepIndex: 1 },
+    stats: { "family-loop": { runs: 2, cleanRuns: 1 } }
+  };
 
   saveState(original, storage);
   const loaded = loadState(tree, storage, 200);
 
   assert.ok(storage.values.has(STORAGE_KEY));
-  assert.equal(loaded.version, 2);
+  assert.equal(loaded.version, 3);
   assert.equal(loaded.skills.one.attempts, 3);
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
   assert.deepEqual(loaded.skills.one.observations.hint, { correct: 0, incorrect: 0 });
+  assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
   assert.deepEqual(loaded.focus, original.focus);
+  assert.deepEqual(loaded.mission, original.mission);
 });
 
 test("v1 Beta state migrates without discarding attempts or cram timing", () => {
@@ -64,12 +70,31 @@ test("v1 Beta state migrates without discarding attempts or cram timing", () => 
   storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
 
   const loaded = loadState(tree, storage, 200);
-  assert.equal(loaded.version, 2);
+  assert.equal(loaded.version, 3);
   assert.equal(loaded.skills.one.pKnown, 0.6);
   assert.equal(loaded.skills.one.attempts, 4);
   assert.equal(loaded.skills.one.cramDue, 500);
   assert.deepEqual(loaded.skills.one.observations.card, { correct: 2, incorrect: 2 });
   assert.deepEqual(loaded.focus, { scenarioId: null, skillId: null, mode: null });
+});
+
+test("v2 state gains mission metrics and mission evidence without losing progress", () => {
+  const storage = memoryStorage();
+  const legacy = createInitialState(tree, 100);
+  legacy.version = 2;
+  legacy.skills.one.attempts = 2;
+  legacy.skills.one.correct = 1;
+  delete legacy.skills.one.observations.mission;
+  delete legacy.mission;
+  storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+  const loaded = loadState(tree, storage, 200);
+
+  assert.equal(loaded.version, 3);
+  assert.equal(loaded.skills.one.attempts, 2);
+  assert.equal(loaded.skills.one.correct, 1);
+  assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
+  assert.deepEqual(loaded.mission, { active: null, stats: {} });
 });
 
 test("new tree nodes are merged into saved state", () => {

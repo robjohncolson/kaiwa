@@ -57,6 +57,15 @@
           <button id="focus-clear" type="button" class="text-button">Clear focus</button>
         </div>
 
+        <section class="mission-launcher" aria-labelledby="mission-launch-title">
+          <div>
+            <p class="eyebrow">OFFLINE CLOSED LOOP</p>
+            <h2 id="mission-launch-title">Run the whole exchange.</h2>
+            <p id="mission-summary" class="mission-summary"></p>
+          </div>
+          <button id="mission-open" type="button" class="mission-open-button">Open missions</button>
+        </section>
+
         <article class="card" aria-live="polite">
           <div class="card-meta">
             <span id="scenario"></span>
@@ -187,6 +196,63 @@
       <aside id="map-detail" class="map-detail" hidden></aside>
       <div id="map-islands" class="map-islands"></div>
       <button type="button" class="reveal-button map-done" data-close-dialog="skill-map-dialog">Back to practice</button>
+    </dialog>
+
+    <dialog id="mission-dialog" class="mission-dialog">
+      <div class="dialog-header mission-dialog-header">
+        <div>
+          <p class="eyebrow">OFFLINE MISSION</p>
+          <h2 id="mission-title">Closed-loop practice</h2>
+        </div>
+        <button type="button" class="dialog-close" data-close-dialog="mission-dialog" aria-label="Close mission">×</button>
+      </div>
+
+      <section id="mission-setup" class="mission-setup">
+        <label class="mission-picker">
+          Mission
+          <select id="mission-select"></select>
+        </label>
+        <p id="mission-purpose" class="mission-purpose"></p>
+        <p id="mission-history" class="mission-history"></p>
+        <label class="mission-challenge">
+          <input id="mission-challenge" type="checkbox">
+          <span><strong>Challenge run</strong> — hide furigana and English choice meanings.</span>
+        </label>
+        <button id="mission-start" type="button" class="reveal-button">Start mission</button>
+      </section>
+
+      <section id="mission-run" class="mission-run" hidden>
+        <div class="mission-run-meta">
+          <span id="mission-progress"></span>
+          <span id="mission-kind" class="mode-badge"></span>
+        </div>
+        <p id="mission-instruction" class="mission-instruction"></p>
+        <p id="mission-prompt" class="mission-prompt" lang="ja"></p>
+        <p id="mission-furigana-status" class="furigana-status"></p>
+        <p id="mission-prompt-meaning" class="mission-prompt-meaning" hidden></p>
+        <button id="mission-hint" type="button" class="text-button mission-hint">Need help — show meaning</button>
+        <div id="mission-options" class="mission-options"></div>
+        <section id="mission-feedback" class="mission-feedback" hidden>
+          <p id="mission-feedback-title" class="mission-feedback-title"></p>
+          <p id="mission-correct-line" class="mission-correct-line" lang="ja"></p>
+          <p id="mission-correct-meaning" class="mission-correct-meaning"></p>
+          <button id="mission-advance" type="button" class="reveal-button">Continue mission</button>
+        </section>
+        <button id="mission-end" type="button" class="text-button mission-end">End run; keep recorded evidence</button>
+      </section>
+
+      <section id="mission-complete" class="mission-complete" hidden>
+        <p id="mission-outcome" class="mission-outcome"></p>
+        <h3 id="mission-complete-title"></h3>
+        <p id="mission-complete-summary"></p>
+        <ul id="mission-skill-results" class="mission-skill-results"></ul>
+        <p id="mission-complete-metrics" class="mission-complete-metrics"></p>
+        <button id="mission-practice-weakest" type="button" class="reveal-button">Practice weakest skill next</button>
+        <div class="mission-complete-actions">
+          <button id="mission-again" type="button" class="small-button">Run it again</button>
+          <button type="button" class="text-button" data-close-dialog="mission-dialog">Back to cards</button>
+        </div>
+      </section>
     </dialog>
 
     <div id="toast" class="toast" role="status"></div>

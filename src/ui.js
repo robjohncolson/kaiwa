@@ -1,5 +1,15 @@
-import { probabilityKnown } from "./mastery.js";
+import { probabilityKnown, skillIsReady } from "./mastery.js";
 import { buildSkillMap, practiceTargetFor } from "./map.js";
+import {
+  advanceMissionRun,
+  answerMissionStep,
+  createMissionRun,
+  missionById,
+  missionLineIndex,
+  recordMissionCompletion,
+  revealMissionHint,
+  validateMissionPack
+} from "./mission.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
@@ -25,6 +35,39 @@ const dom = {
   mapClearFocus: document.querySelector("#map-clear-focus"),
   mapDetail: document.querySelector("#map-detail"),
   mapIslands: document.querySelector("#map-islands"),
+  missionOpen: document.querySelector("#mission-open"),
+  missionSummary: document.querySelector("#mission-summary"),
+  missionDialog: document.querySelector("#mission-dialog"),
+  missionTitle: document.querySelector("#mission-title"),
+  missionSetup: document.querySelector("#mission-setup"),
+  missionSelect: document.querySelector("#mission-select"),
+  missionPurpose: document.querySelector("#mission-purpose"),
+  missionHistory: document.querySelector("#mission-history"),
+  missionChallenge: document.querySelector("#mission-challenge"),
+  missionStart: document.querySelector("#mission-start"),
+  missionRun: document.querySelector("#mission-run"),
+  missionProgress: document.querySelector("#mission-progress"),
+  missionKind: document.querySelector("#mission-kind"),
+  missionInstruction: document.querySelector("#mission-instruction"),
+  missionPrompt: document.querySelector("#mission-prompt"),
+  missionFuriganaStatus: document.querySelector("#mission-furigana-status"),
+  missionPromptMeaning: document.querySelector("#mission-prompt-meaning"),
+  missionHint: document.querySelector("#mission-hint"),
+  missionOptions: document.querySelector("#mission-options"),
+  missionFeedback: document.querySelector("#mission-feedback"),
+  missionFeedbackTitle: document.querySelector("#mission-feedback-title"),
+  missionCorrectLine: document.querySelector("#mission-correct-line"),
+  missionCorrectMeaning: document.querySelector("#mission-correct-meaning"),
+  missionAdvance: document.querySelector("#mission-advance"),
+  missionEnd: document.querySelector("#mission-end"),
+  missionComplete: document.querySelector("#mission-complete"),
+  missionOutcome: document.querySelector("#mission-outcome"),
+  missionCompleteTitle: document.querySelector("#mission-complete-title"),
+  missionCompleteSummary: document.querySelector("#mission-complete-summary"),
+  missionSkillResults: document.querySelector("#mission-skill-results"),
+  missionCompleteMetrics: document.querySelector("#mission-complete-metrics"),
+  missionPracticeWeakest: document.querySelector("#mission-practice-weakest"),
+  missionAgain: document.querySelector("#mission-again"),
   sheetOpen: document.querySelector("#sheet-open"),
   sheetDialog: document.querySelector("#phone-sheet"),
   sheetScenario: document.querySelector("#sheet-scenario"),
@@ -79,6 +122,8 @@ const dom = {
 let content;
 let tree;
 let readings;
+let missionPack;
+let missionLines;
 let items;
 let readingSkillIds;
 let state;
@@ -89,6 +134,8 @@ let roleplayHistory = [];
 let pendingRoleplayResult = null;
 let forcedFurigana = new Set();
 let selectedMapSkillId = null;
+let completedMissionRun = null;
+let completedMissionWeakestSkillId = null;
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
@@ -352,6 +399,242 @@ function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
 }
 
+function statsForMission(missionId) {
+  return state.mission.stats[missionId] ?? {
+    runs: 0,
+    cleanRuns: 0,
+    safeRecoveries: 0,
+    failedRuns: 0,
+    noFuriganaRuns: 0,
+    hints: 0,
+    totalResponseMs: 0,
+    recent: []
+  };
+}
+
+function renderMissionSummary() {
+  const allStats = Object.values(state.mission.stats);
+  const totals = allStats.reduce((result, stats) => ({
+    runs: result.runs + (stats.runs ?? 0),
+    clean: result.clean + (stats.cleanRuns ?? 0),
+    noFurigana: result.noFurigana + (stats.noFuriganaRuns ?? 0)
+  }), { runs: 0, clean: 0, noFurigana: 0 });
+  if (state.mission.active) {
+    const active = missionById(missionPack, state.mission.active.missionId);
+    dom.missionSummary.textContent = `Resume ${active?.title ?? "active mission"} · step ${state.mission.active.stepIndex + 1}`;
+    dom.missionOpen.textContent = "Resume mission";
+    return;
+  }
+  dom.missionSummary.textContent = totals.runs === 0
+    ? `${missionPack.missions.length} fixed missions · no network`
+    : `${totals.clean}/${totals.runs} clean · ${totals.noFurigana} without furigana`;
+  dom.missionOpen.textContent = "Open missions";
+}
+
+function selectedMission() {
+  return missionById(missionPack, dom.missionSelect.value) ?? missionPack.missions[0];
+}
+
+function renderMissionLobby() {
+  const mission = selectedMission();
+  const stats = statsForMission(mission.id);
+  dom.missionTitle.textContent = "Closed-loop practice";
+  dom.missionSetup.hidden = false;
+  dom.missionRun.hidden = true;
+  dom.missionComplete.hidden = true;
+  dom.missionPurpose.textContent = mission.purpose;
+  dom.missionHistory.textContent = stats.runs === 0
+    ? `${mission.steps.length} fixed turns. The final turn deliberately goes off script.`
+    : `${stats.cleanRuns}/${stats.runs} clean · ${stats.safeRecoveries} safe recoveries · ${stats.noFuriganaRuns} without furigana`;
+}
+
+function saveMissionRun(run) {
+  state = {
+    ...state,
+    mission: { ...state.mission, active: run }
+  };
+  saveState(state);
+  renderMissionSummary();
+}
+
+function missionStepEntries(step) {
+  const choiceText = step.choiceSkillIds
+    .map((skillId) => missionLines.get(skillId)?.ja ?? "")
+    .join(" ");
+  return readingEntriesIn(`${step.prompt} ${choiceText}`, readings);
+}
+
+function renderMissionFeedback(run, mission, step) {
+  const observation = run.observations.at(-1);
+  const correctLine = missionLines.get(step.targetSkillId);
+  dom.missionFeedback.hidden = false;
+  dom.missionFeedback.dataset.result = observation.answerCorrect ? "correct" : "incorrect";
+  dom.missionFeedbackTitle.textContent = observation.evidenceCorrect
+    ? "Correct — unaided mission evidence recorded."
+    : observation.answerCorrect
+      ? "Correct with help — BKT records this as a miss."
+      : "Not the fixed response — BKT records a miss.";
+  renderJapanese(dom.missionCorrectLine, correctLine.ja, { alwaysShow: true });
+  dom.missionCorrectMeaning.textContent = correctLine.meaning;
+  dom.missionAdvance.textContent = run.stepIndex === mission.steps.length - 1
+    ? "Finish mission"
+    : "Continue mission";
+}
+
+function answerMissionChoice(selectedSkillId) {
+  const active = state.mission.active;
+  const mission = missionById(missionPack, active?.missionId);
+  if (!active || !mission || active.awaitingAdvance) return;
+  const step = mission.steps[active.stepIndex];
+  const run = answerMissionStep(active, mission, selectedSkillId);
+  const observation = run.observations.at(-1);
+  const observationItem = {
+    id: `mission.${mission.id}.${step.id}.${observation.observedAt}`,
+    skillId: observation.skillId,
+    options: step.choiceSkillIds.map((skillId) => ({ id: skillId }))
+  };
+  state = applyObservation(
+    state,
+    observationItem,
+    observation.evidenceCorrect,
+    observation.observedAt,
+    { source: "mission" }
+  );
+  saveMissionRun(run);
+  renderCard();
+  renderMissionStep();
+}
+
+function renderMissionStep() {
+  const run = state.mission.active;
+  const mission = missionById(missionPack, run?.missionId);
+  if (!run || !mission) {
+    renderMissionLobby();
+    return;
+  }
+  const step = mission.steps[run.stepIndex];
+  dom.missionTitle.textContent = mission.title;
+  dom.missionSetup.hidden = true;
+  dom.missionRun.hidden = false;
+  dom.missionComplete.hidden = true;
+  dom.missionProgress.textContent = `Turn ${run.stepIndex + 1} of ${mission.steps.length}`;
+  dom.missionKind.textContent = step.kind === "off_script" ? "Off script" : "Partner";
+  dom.missionKind.classList.toggle("mission-off-script", step.kind === "off_script");
+  dom.missionInstruction.textContent = step.kind === "off_script"
+    ? "The exchange opened up. Use the pre-decided recovery; do not improvise."
+    : "Choose your fixed response to the partner's Japanese.";
+  renderJapanese(dom.missionPrompt, step.prompt, { neverShow: run.hideFurigana });
+  const readingEntries = missionStepEntries(step);
+  const shownReadings = run.hideFurigana
+    ? 0
+    : readingEntries.filter((entry) => showReadingFor(entry)).length;
+  dom.missionFuriganaStatus.textContent = run.hideFurigana
+    ? "Challenge run · furigana and choice meanings hidden"
+    : readingEntries.length === 0
+      ? "This turn uses kana only"
+      : `${shownReadings} supported · ${readingEntries.length - shownReadings} retired by reading BKT`;
+  dom.missionPromptMeaning.textContent = step.meaning;
+  dom.missionPromptMeaning.hidden = !run.currentHintUsed && !run.awaitingAdvance;
+  dom.missionHint.hidden = run.awaitingAdvance;
+  dom.missionHint.disabled = run.currentHintUsed;
+  dom.missionHint.textContent = run.currentHintUsed ? "Meaning shown — help recorded" : "Need help — show meaning";
+  dom.missionFeedback.hidden = true;
+  dom.missionOptions.replaceChildren();
+
+  const observation = run.awaitingAdvance ? run.observations.at(-1) : null;
+  for (const skillId of step.choiceSkillIds) {
+    const line = missionLines.get(skillId);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mission-option";
+    button.disabled = run.awaitingAdvance;
+    const japanese = document.createElement("span");
+    japanese.className = "mission-option-japanese";
+    japanese.lang = "ja";
+    renderJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
+    button.append(japanese);
+    if (!run.hideFurigana) {
+      const meaning = document.createElement("span");
+      meaning.className = "mission-option-meaning";
+      meaning.textContent = line.meaning;
+      button.append(meaning);
+    }
+    if (observation) {
+      if (skillId === step.targetSkillId) button.classList.add("correct");
+      if (skillId === observation.selectedSkillId && !observation.answerCorrect) button.classList.add("incorrect");
+    }
+    button.addEventListener("click", () => answerMissionChoice(skillId));
+    dom.missionOptions.append(button);
+  }
+  if (run.awaitingAdvance) renderMissionFeedback(run, mission, step);
+}
+
+function weakestMissionSkill(run) {
+  const skillIds = [...new Set(run.observations.map((observation) => observation.skillId))];
+  return skillIds.sort((a, b) => {
+    const readyDifference = Number(skillIsReady(tree, state.skills[a])) - Number(skillIsReady(tree, state.skills[b]));
+    return readyDifference || probabilityKnown(state.skills[a]) - probabilityKnown(state.skills[b]);
+  })[0] ?? null;
+}
+
+function renderMissionComplete(run) {
+  const mission = missionById(missionPack, run.missionId);
+  completedMissionRun = run;
+  completedMissionWeakestSkillId = weakestMissionSkill(run);
+  const stats = statsForMission(mission.id);
+  const responseMs = run.observations.reduce((total, observation) => total + observation.responseMs, 0);
+  dom.missionTitle.textContent = mission.title;
+  dom.missionSetup.hidden = true;
+  dom.missionRun.hidden = true;
+  dom.missionComplete.hidden = false;
+  dom.missionOutcome.dataset.outcome = run.outcome;
+  dom.missionOutcome.textContent = run.outcome;
+  const wording = {
+    clean: ["Closed loop complete.", "Every fixed response—including the abort—was correct without help."],
+    recovered: ["Recovered safely.", "There was a miss or hint, but you used the abort when the exchange opened up."],
+    failed: ["Loop needs another run.", "The final off-script turn was not recovered with the abort line."]
+  }[run.outcome];
+  dom.missionCompleteTitle.textContent = wording[0];
+  dom.missionCompleteSummary.textContent = wording[1];
+  dom.missionSkillResults.replaceChildren();
+  const results = new Map();
+  for (const observation of run.observations) {
+    const current = results.get(observation.skillId) ?? { correct: 0, missed: 0 };
+    current[observation.evidenceCorrect ? "correct" : "missed"] += 1;
+    results.set(observation.skillId, current);
+  }
+  for (const [skillId, result] of results) {
+    const item = document.createElement("li");
+    const label = document.createElement("span");
+    label.className = "mission-skill-result-label";
+    renderJapanese(label, skillLabel(skillId));
+    const meta = document.createElement("span");
+    meta.className = "mission-skill-result-meta";
+    meta.textContent = `${Math.round(probabilityKnown(state.skills[skillId]) * 100)}% BKT · ${result.correct} hit / ${result.missed} miss`;
+    item.append(label, meta);
+    dom.missionSkillResults.append(item);
+  }
+  dom.missionCompleteMetrics.textContent = `${(responseMs / 1000).toFixed(1)}s response time · ${run.hints} hints · ${stats.cleanRuns}/${stats.runs} clean overall${run.hideFurigana ? " · challenge run" : ""}`;
+  dom.missionPracticeWeakest.disabled = !completedMissionWeakestSkillId;
+}
+
+function startMission(missionId = dom.missionSelect.value, hideFurigana = dom.missionChallenge.checked) {
+  const mission = missionById(missionPack, missionId);
+  if (!mission) return;
+  completedMissionRun = null;
+  completedMissionWeakestSkillId = null;
+  dom.missionSelect.value = mission.id;
+  saveMissionRun(createMissionRun(mission, Date.now(), { hideFurigana }));
+  renderMissionStep();
+}
+
+function openMissionDialog() {
+  completedMissionRun = null;
+  if (state.mission.active) renderMissionStep();
+  else renderMissionLobby();
+  dom.missionDialog.showModal();
+}
+
 function focusDescription() {
   const focus = state.focus;
   if (focus?.skillId) return skillLabel(focus.skillId);
@@ -418,7 +701,7 @@ function renderMapDetail(model, skillId) {
   statusChip.textContent = node.status[0].toUpperCase() + node.status.slice(1);
   const knownChip = document.createElement("span");
   knownChip.className = "map-status-chip";
-  knownChip.textContent = `${node.knownPercent}% BKT · ${node.attempts} observations`;
+  knownChip.textContent = `${node.knownPercent}% BKT · ${state.skills[skillId].correct}/${tree.readyMinCorrect ?? 2} confirmations`;
   status.append(statusChip, knownChip);
   dom.mapDetail.append(title, status);
 
@@ -727,7 +1010,11 @@ function recordUnsure() {
 function renderEvidence() {
   const skill = state.skills[currentItem.skillId];
   const known = Math.round(probabilityKnown(skill) * 100);
-  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${skill.attempts} observations`;
+  const minimumCorrect = tree.readyMinCorrect ?? 2;
+  const readiness = skillIsReady(tree, skill)
+    ? "ready"
+    : `${Math.min(skill.correct, minimumCorrect)}/${minimumCorrect} confirmations`;
+  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${readiness}`;
 }
 
 function renderProgress() {
@@ -794,6 +1081,7 @@ function renderCard() {
   renderProgress();
   renderRoute();
   renderFocus();
+  renderMissionSummary();
 }
 
 function populateRouteScenarios() {
@@ -805,7 +1093,63 @@ function populateRouteScenarios() {
   }
 }
 
+function populateMissions() {
+  for (const mission of missionPack.missions) {
+    const option = document.createElement("option");
+    option.value = mission.id;
+    option.textContent = mission.title;
+    dom.missionSelect.append(option);
+  }
+}
+
 function bindEvents() {
+  dom.missionOpen.addEventListener("click", openMissionDialog);
+  dom.missionSelect.addEventListener("change", renderMissionLobby);
+  dom.missionStart.addEventListener("click", () => startMission());
+  dom.missionHint.addEventListener("click", () => {
+    const run = revealMissionHint(state.mission.active);
+    saveMissionRun(run);
+    renderMissionStep();
+  });
+  dom.missionAdvance.addEventListener("click", () => {
+    const active = state.mission.active;
+    const mission = missionById(missionPack, active?.missionId);
+    if (!active || !mission || !active.awaitingAdvance) return;
+    const run = advanceMissionRun(active, mission);
+    if (run.completed) {
+      state = { ...state, mission: recordMissionCompletion(state.mission, run) };
+      saveState(state);
+      renderCard();
+      renderMissionComplete(run);
+      return;
+    }
+    saveMissionRun(run);
+    renderMissionStep();
+  });
+  dom.missionEnd.addEventListener("click", () => {
+    if (!window.confirm("End this mission? BKT evidence already recorded will remain.")) return;
+    state = { ...state, mission: { ...state.mission, active: null } };
+    saveState(state);
+    completedMissionRun = null;
+    renderMissionSummary();
+    renderMissionLobby();
+  });
+  dom.missionPracticeWeakest.addEventListener("click", () => {
+    const skillId = completedMissionWeakestSkillId
+      ? practiceTargetFor(tree, state, completedMissionWeakestSkillId)
+      : null;
+    const item = skillId
+      ? items.find((candidate) => candidate.skillId === skillId && candidate.mode !== "reading")
+        ?? items.find((candidate) => candidate.skillId === skillId)
+      : null;
+    if (!item) return;
+    setPracticeFocus({ scenarioId: item.scenarioId, skillId }, "Weakest mission skill focused");
+    dom.missionDialog.close();
+  });
+  dom.missionAgain.addEventListener("click", () => {
+    if (!completedMissionRun) return;
+    startMission(completedMissionRun.missionId, completedMissionRun.hideFurigana);
+  });
   dom.mapOpen.addEventListener("click", () => {
     renderSkillMap();
     dom.mapDialog.showModal();
@@ -879,21 +1223,29 @@ async function loadJson(path) {
 
 async function start() {
   try {
-    [content, tree, readings] = await Promise.all([
+    [content, tree, readings, missionPack] = await Promise.all([
       loadJson("./data/scenarios.json"),
       loadJson("./data/tree.json"),
-      loadJson("./data/readings.json")
+      loadJson("./data/readings.json"),
+      loadJson("./data/missions.json")
     ]);
     tree = augmentTreeWithReadings(tree, readings);
+    validateMissionPack(missionPack, content, tree);
+    missionLines = missionLineIndex(content);
     readingSkillIds = new Set(readings.entries.map(readingSkillId));
     items = flattenItems(content, readings);
     state = loadState(tree);
+    if (state.mission.active && !missionById(missionPack, state.mission.active.missionId)) {
+      state = { ...state, mission: { ...state.mission, active: null } };
+      saveState(state);
+    }
 
     const name = content.placeholders.nameKatakana;
     dom.placeholder.textContent = `${name.value} is an unconfirmed placeholder. Replace it with the exact reservation name.`;
     dom.placeholder.hidden = name.confirmed;
 
     populateRouteScenarios();
+    populateMissions();
     populateSafetyTools();
     bindEvents();
     renderCard();

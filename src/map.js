@@ -1,4 +1,4 @@
-import { probabilityKnown } from "./mastery.js";
+import { probabilityKnown, skillIsReady } from "./mastery.js";
 import { readingSkillId } from "./readings.js";
 import { isSkillUnlocked, prerequisitesFor } from "./scheduler.js";
 
@@ -8,15 +8,11 @@ const COLUMN_GAP = 54;
 const ROW_GAP = 18;
 const PADDING = 20;
 
-function knownFor(state, skillId) {
-  return probabilityKnown(state.skills[skillId]);
-}
-
 export function mapSkillStatus(tree, state, skillId) {
   const skill = state.skills[skillId];
   if (!skill || !isSkillUnlocked(tree, state.skills, skillId)) return "locked";
   if (skill.attempts === 0) return "unseen";
-  return probabilityKnown(skill) >= tree.readyThreshold ? "ready" : "learning";
+  return skillIsReady(tree, skill) ? "ready" : "learning";
 }
 
 export function practiceTargetFor(tree, state, skillId, visited = new Set()) {
@@ -25,7 +21,7 @@ export function practiceTargetFor(tree, state, skillId, visited = new Set()) {
   if (isSkillUnlocked(tree, state.skills, skillId)) return skillId;
 
   const blockers = prerequisitesFor(tree, skillId)
-    .filter((parentId) => knownFor(state, parentId) < tree.readyThreshold)
+    .filter((parentId) => !skillIsReady(tree, state.skills[parentId]))
     .sort();
   for (const blocker of blockers) {
     const target = practiceTargetFor(tree, state, blocker, visited);
