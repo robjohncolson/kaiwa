@@ -1,4 +1,5 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
+import { fieldMultiplier } from "./field.js";
 import { readingIsReady, readingSkillId } from "./readings.js";
 import { isSkillUnlocked, prerequisitesFor } from "./scheduler.js";
 
@@ -41,6 +42,7 @@ export function schedulerReason(state, item, now = Date.now()) {
   if (state.route?.scenarioId === item.scenarioId && routeMinutes > 0 && routeMinutes <= 180) {
     return "Upcoming real event";
   }
+  if (fieldMultiplier(state.field, item.scenarioId, now) > 1) return "Recent field friction";
   if (state.skills[item.skillId]?.cramDue <= now) return "Due now";
   return "Earliest upcoming review";
 }

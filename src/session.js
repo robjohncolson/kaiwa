@@ -1,6 +1,7 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import { readingIsReady } from "./readings.js";
 import { isSkillUnlocked, scoreItem } from "./scheduler.js";
+import { fieldMultiplier } from "./field.js";
 
 export const GUIDED_PHRASE_COUNT = 3;
 export const GUIDED_READING_COUNT = 3;
@@ -48,7 +49,8 @@ function missionScore(mission, selectedItems, state, now) {
   const routeMatch = state.route?.scenarioId === mission.scenarioId
     && state.route.eventAt > now;
   const runs = state.mission.stats?.[mission.id]?.runs ?? 0;
-  return averageNeed * 10 + selectedScenarioCards * 3 + (routeMatch ? 100 : 0) + (runs === 0 ? 2 : 0);
+  return (averageNeed * 10 + selectedScenarioCards * 3 + (routeMatch ? 100 : 0) + (runs === 0 ? 2 : 0))
+    * fieldMultiplier(state.field, mission.scenarioId, now);
 }
 
 export function chooseGuidedMission(missionPack, selectedItems, state, now = Date.now()) {
@@ -86,7 +88,8 @@ export function buildGuidedSession({ items, tree, readings, missionPack, state, 
         .map((item) => item.skillId)
     },
     completedAt: null,
-    missionOutcome: null
+    missionOutcome: null,
+    production: null
   };
 }
 
@@ -123,7 +126,12 @@ export function completeGuidedSession(session, missionRun, now = Date.now()) {
     ...session,
     phase: "complete",
     completedAt: now,
-    missionOutcome: missionRun.outcome
+    missionOutcome: missionRun.outcome,
+    production: missionRun.mode === "production" ? {
+      clean: missionRun.observations.filter((observation) => observation.grade === "clean").length,
+      total: missionRun.observations.length,
+      abortResponseMs: missionRun.observations.at(-1)?.responseMs ?? null
+    } : null
   };
 }
 
@@ -146,12 +154,19 @@ export function summarizeGuidedSession(session, { state, tree, readings, items }
     .filter((item) => !readingIsReady(readings, state.skills[item.skillId]))
     .sort((a, b) => probabilityKnown(state.skills[a.skillId]) - probabilityKnown(state.skills[b.skillId]));
   const correctCards = session.outcomes.filter((outcome) => outcome.correct).length;
+  const phraseOutcomes = session.outcomes.filter((outcome) => outcome.mode !== "reading");
+  const readingOutcomes = session.outcomes.filter((outcome) => outcome.mode === "reading");
 
   return {
     cardsCompleted: session.outcomes.length,
     cardsTotal: session.cardIds.length,
     correctCards,
+    phraseCorrect: phraseOutcomes.filter((outcome) => outcome.correct).length,
+    phraseTotal: phraseOutcomes.length,
+    readingCorrect: readingOutcomes.filter((outcome) => outcome.correct).length,
+    readingTotal: readingOutcomes.length,
     missionOutcome: session.missionOutcome,
+    production: session.production,
     durationMs: session.completedAt
       ? Math.max(0, session.completedAt - session.startedAt)
       : Math.max(0, Date.now() - session.startedAt),

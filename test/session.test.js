@@ -90,3 +90,30 @@ test("session summary reports honest furigana retirement and weak phrases", asyn
   assert.equal(archived.active, null);
   assert.equal(archived.recent.length, 1);
 });
+
+test("guided completion keeps speak-first evidence separate", async () => {
+  const { tree, readings, missionPack, items } = await fixtures();
+  const state = createInitialState(tree, NOW);
+  let session = buildGuidedSession({ items, tree, readings, missionPack, state, now: NOW });
+  for (const id of session.cardIds) {
+    const item = items.find((entry) => entry.id === id);
+    session = recordSessionCard(session, item, true, NOW + session.outcomes.length + 1);
+  }
+  const missionRun = {
+    completed: true,
+    missionId: session.missionId,
+    mode: "production",
+    outcome: "clean",
+    observations: [
+      { grade: "clean", responseMs: 1_000 },
+      { grade: "help", responseMs: 2_000 },
+      { grade: "clean", responseMs: 3_000 }
+    ]
+  };
+
+  session = completeGuidedSession(session, missionRun, NOW + 120_000);
+  const summary = summarizeGuidedSession(session, { state, tree, readings, items });
+
+  assert.deepEqual(summary.production, { clean: 2, total: 3, abortResponseMs: 3_000 });
+  assert.equal(state.totalReviews, 0);
+});

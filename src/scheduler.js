@@ -1,5 +1,6 @@
 import { observeBkt, probabilityKnown, skillIsReady } from "./mastery.js";
 import { createReadingItems } from "./readings.js";
+import { fieldMultiplier } from "./field.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
   2 * 60 * 1000,
@@ -70,6 +71,7 @@ export function scoreItem(item, tree, state, now = Date.now()) {
   const uncertainty = 0.75 + 4 * known * (1 - known);
   return need * uncertainty * dueBoost
     * routeMultiplier(state.route, item.scenarioId, now)
+    * fieldMultiplier(state.field, item.scenarioId, now)
     * (item.priority ?? 1);
 }
 
@@ -91,7 +93,8 @@ export function selectNextItem(items, tree, state, now = Date.now()) {
     const urgentRouteItems = routeMinutes > 0 && routeMinutes <= 180
       ? pool.filter((item) => item.scenarioId === state.route.scenarioId)
       : [];
-    candidates = [...new Map([...due, ...urgentRouteItems].map((item) => [item.id, item])).values()];
+    const fieldPriorityItems = pool.filter((item) => fieldMultiplier(state.field, item.scenarioId, now) > 1);
+    candidates = [...new Map([...due, ...urgentRouteItems, ...fieldPriorityItems].map((item) => [item.id, item])).values()];
   }
 
   if (candidates.length === 0) {

@@ -41,16 +41,36 @@ test("BKT state round-trips through browser-like storage", () => {
   const loaded = loadState(tree, storage, 200);
 
   assert.ok(storage.values.has(STORAGE_KEY));
-  assert.equal(loaded.version, 4);
+  assert.equal(loaded.version, 5);
   assert.equal(loaded.skills.one.attempts, 3);
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
   assert.deepEqual(loaded.skills.one.observations.hint, { correct: 0, incorrect: 0 });
   assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
   assert.deepEqual(loaded.focus, original.focus);
-  assert.deepEqual(loaded.mission, original.mission);
+  assert.deepEqual(loaded.mission, {
+    ...original.mission,
+    active: {
+      mode: "recognition",
+      productionRevealed: false,
+      productionResponseMs: null,
+      ...original.mission.active
+    }
+  });
   assert.deepEqual(loaded.session, { active: null, recent: [] });
   assert.equal(loaded.skills.one.readingCheckpointStreak, 0);
+  assert.deepEqual(loaded.skills.one.production, {
+    attempts: 0,
+    clean: 0,
+    helped: 0,
+    missed: 0,
+    streak: 0,
+    bestResponseMs: null,
+    lastGrade: null,
+    lastResponseMs: null,
+    lastAt: null
+  });
+  assert.deepEqual(loaded.field, { events: [] });
 });
 
 test("v1 Beta state migrates without discarding attempts or cram timing", () => {
@@ -79,7 +99,7 @@ test("v1 Beta state migrates without discarding attempts or cram timing", () => 
   storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
 
   const loaded = loadState(tree, storage, 200);
-  assert.equal(loaded.version, 4);
+  assert.equal(loaded.version, 5);
   assert.equal(loaded.skills.one.pKnown, 0.6);
   assert.equal(loaded.skills.one.attempts, 4);
   assert.equal(loaded.skills.one.cramDue, 500);
@@ -99,7 +119,7 @@ test("v2 state gains mission metrics and mission evidence without losing progres
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 4);
+  assert.equal(loaded.version, 5);
   assert.equal(loaded.skills.one.attempts, 2);
   assert.equal(loaded.skills.one.correct, 1);
   assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
@@ -119,7 +139,7 @@ test("v3 state gains guided sessions and honest reading checkpoints", () => {
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 4);
+  assert.equal(loaded.version, 5);
   assert.deepEqual(loaded.session, { active: null, recent: [] });
   assert.equal(loaded.skills.one.pKnown, 0.9);
   assert.equal(loaded.skills.one.readingCheckpointStreak, 0);
@@ -142,12 +162,32 @@ test("progress backups restore through current-tree migration", () => {
   const raw = createProgressBackup(original, 150);
   const restored = restoreProgressBackup(raw, tree, storage, 200);
 
-  assert.equal(restored.version, 4);
+  assert.equal(restored.version, 5);
   assert.equal(restored.totalReviews, 7);
   assert.equal(restored.skills.one.pKnown, 0.81);
   assert.equal(restored.skills.one.readingCheckpointStreak, 2);
   assert.equal(restored.session.active.id, "guided-100");
   assert.equal(JSON.parse(storage.values.get(STORAGE_KEY)).totalReviews, 7);
+});
+
+test("v4 state gains independent production and field evidence", () => {
+  const storage = memoryStorage();
+  const legacy = createInitialState(tree, 100);
+  legacy.version = 4;
+  delete legacy.totalProduction;
+  delete legacy.field;
+  delete legacy.skills.one.production;
+  legacy.mission.active = { missionId: "legacy-loop", stepIndex: 1 };
+  storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+  const loaded = loadState(tree, storage, 200);
+
+  assert.equal(loaded.version, 5);
+  assert.equal(loaded.totalProduction, 0);
+  assert.deepEqual(loaded.field, { events: [] });
+  assert.equal(loaded.skills.one.production.attempts, 0);
+  assert.equal(loaded.mission.active.mode, "recognition");
+  assert.equal(loaded.mission.active.productionRevealed, false);
 });
 
 test("progress restore rejects unrelated and unsupported JSON", () => {
