@@ -8,6 +8,7 @@ const productionUrl = "https://kaiwa-nine.vercel.app/";
 test("share card and QR asset point to the Vercel production URL", async () => {
   const html = await readFile(new URL("index.html", root), "utf8");
   const svg = await readFile(new URL("qr-kaiwa.svg", root), "utf8");
+  const pagesWorkflow = await readFile(new URL(".github/workflows/pages.yml", root), "utf8");
 
   assert.match(html, /id="kaiwa-share"/);
   assert.match(html, /<img[^>]*id="kaiwa-share-qr"[^>]*src="\.\/qr-kaiwa\.svg"[^>]*>/);
@@ -16,4 +17,5 @@ test("share card and QR asset point to the Vercel production URL", async () => {
   assert.match(svg, /viewBox="0 0 37 37"/);
   assert.match(svg, /<rect fill="white"/);
   assert.match(svg, /<path d="M/);
+  assert.match(pagesWorkflow, /cp [^\n]*qr-kaiwa\.svg[^\n]* _site\//);
 });

@@ -31,7 +31,7 @@ jobs:
       - name: Stage static app
         run: |
           mkdir _site
-          cp index.html styles.css manifest.webmanifest icon.svg service-worker.js _site/
+          cp index.html styles.css manifest.webmanifest icon.svg qr-kaiwa.svg service-worker.js _site/
           cp -R data src _site/
           touch _site/.nojekyll
       - name: Upload Pages artifact
