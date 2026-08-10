@@ -20,7 +20,7 @@ Progress stays in this browser's `localStorage` at `kaiwa.practice-state.v1`. St
 
 To add a scenario, add its fixed lines and cards in `data/scenarios.json`, its phrase skills and edges in `data/tree.json`, and its deterministic turns in `data/missions.json`. Add each kanji-bearing word with its contextual reading to `data/readings.json`; reading cards and BKT nodes are generated automatically. Tests reject unannotated kanji, missing cards, open mission choices, bad recovery endings, and graph cycles.
 
-`コロソン` is an **unconfirmed placeholder**; replace it with the exact katakana reservation name. The public seed deliberately omits private addresses, coordinates, phone numbers, schedules, and relatives' names.
+`コルソン` is the user-confirmed katakana for Colson (`ko-ru-so-n`). The public seed deliberately omits private addresses, coordinates, phone numbers, schedules, and relatives' names.
 
 ## Optional roleplay
 

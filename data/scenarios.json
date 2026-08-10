@@ -2,9 +2,9 @@
   "schemaVersion": 2,
   "placeholders": {
     "nameKatakana": {
-      "value": "コロソン",
-      "confirmed": false,
-      "note": "Placeholder only. Replace this with the katakana name on the reservation."
+      "value": "コルソン",
+      "confirmed": true,
+      "note": "Confirmed by the user for the surname Colson: コ・ル・ソ・ン."
     }
   },
   "scenarios": [
@@ -138,7 +138,7 @@
       "purpose": "Recognize the staff question and choose the fixed response.",
       "abortSkillId": "abort.wakarimasen",
       "allowedUserLines": [
-        { "skillId": "identity.name_katakana", "ja": "コロソン", "meaning": "COLSON — placeholder katakana name card" },
+        { "skillId": "identity.name_katakana", "ja": "コルソン", "meaning": "COLSON — confirmed katakana name card" },
         { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
       ],
       "staffPrompts": [
@@ -152,11 +152,11 @@
           "prompt": "お名前は？",
           "instruction": "Choose the correct fixed reply.",
           "options": [
-            { "id": "name", "label": "コロソン — show or say the reservation name", "correct": true },
+            { "id": "name", "label": "コルソン — show or say the reservation name", "correct": true },
             { "id": "card", "label": "カードでお願いします — by card, please", "correct": false },
             { "id": "stock", "label": "入荷していますか — has it arrived?", "correct": false }
           ],
-          "answer": { "ja": "コロソン", "reading": "コロソン", "meaning": "Show or say the katakana name on the reservation.", "note": "UNCONFIRMED PLACEHOLDER: replace コロソン with the exact reservation name." },
+          "answer": { "ja": "コルソン", "reading": "コルソン", "meaning": "Show or say the katakana name on the reservation.", "note": "Confirmed katakana for Colson: コ・ル・ソ・ン." },
           "zoom": { "context": "お名前は？", "breakdown": "お + 名前 makes “name” polite; は leaves the rest of the question understood." }
         }
       ]
