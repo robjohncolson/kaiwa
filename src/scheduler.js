@@ -43,6 +43,20 @@ export function routeMultiplier(route, scenarioId, now = Date.now()) {
   return 1.1;
 }
 
+export function focusCandidates(items, tree, state) {
+  const focus = state.focus;
+  if (!focus?.skillId && !focus?.scenarioId) return [];
+
+  const unlocked = items.filter((item) => isSkillUnlocked(tree, state.skills, item.skillId));
+  if (focus.skillId) {
+    return unlocked.filter((item) => item.skillId === focus.skillId);
+  }
+  return unlocked.filter((item) =>
+    item.scenarioId === focus.scenarioId
+    && (!focus.mode || item.mode === focus.mode)
+  );
+}
+
 export function scoreItem(item, tree, state, now = Date.now()) {
   const skill = state.skills[item.skillId];
   if (!skill || !isSkillUnlocked(tree, state.skills, item.skillId)) {
@@ -63,18 +77,26 @@ export function selectNextItem(items, tree, state, now = Date.now()) {
   const unlocked = items.filter((item) => isSkillUnlocked(tree, state.skills, item.skillId));
   if (unlocked.length === 0) return null;
 
-  const due = unlocked.filter((item) => state.skills[item.skillId].cramDue <= now);
-  const routeMinutes = state.route?.eventAt
-    ? (state.route.eventAt - now) / 60000
-    : Number.POSITIVE_INFINITY;
-  const urgentRouteItems = routeMinutes > 0 && routeMinutes <= 180
-    ? unlocked.filter((item) => item.scenarioId === state.route.scenarioId)
-    : [];
-  let candidates = [...new Map([...due, ...urgentRouteItems].map((item) => [item.id, item])).values()];
+  const focused = focusCandidates(items, tree, state);
+  const pool = focused.length > 0 ? focused : unlocked;
+
+  let candidates;
+  if (focused.length > 0) {
+    candidates = focused;
+  } else {
+    const due = pool.filter((item) => state.skills[item.skillId].cramDue <= now);
+    const routeMinutes = state.route?.eventAt
+      ? (state.route.eventAt - now) / 60000
+      : Number.POSITIVE_INFINITY;
+    const urgentRouteItems = routeMinutes > 0 && routeMinutes <= 180
+      ? pool.filter((item) => item.scenarioId === state.route.scenarioId)
+      : [];
+    candidates = [...new Map([...due, ...urgentRouteItems].map((item) => [item.id, item])).values()];
+  }
 
   if (candidates.length === 0) {
-    const earliest = Math.min(...unlocked.map((item) => state.skills[item.skillId].cramDue));
-    candidates = unlocked.filter((item) => state.skills[item.skillId].cramDue === earliest);
+    const earliest = Math.min(...pool.map((item) => state.skills[item.skillId].cramDue));
+    candidates = pool.filter((item) => state.skills[item.skillId].cramDue === earliest);
   }
   if (candidates.length > 1 && state.lastItemId) {
     const withoutLast = candidates.filter((item) => item.id !== state.lastItemId);

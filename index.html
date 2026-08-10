@@ -48,7 +48,14 @@
           </div>
         </details>
 
-        <p id="progress" class="progress"></p>
+        <div class="progress-row">
+          <p id="progress" class="progress"></p>
+          <button id="map-open" type="button" class="map-button">Skill map</button>
+        </div>
+        <div id="focus-banner" class="focus-banner" hidden>
+          <p id="focus-summary"></p>
+          <button id="focus-clear" type="button" class="text-button">Clear focus</button>
+        </div>
 
         <article class="card" aria-live="polite">
           <div class="card-meta">
@@ -102,7 +109,7 @@
             <p class="chip-label">Tap a fixed line or type your own attempt:</p>
             <div id="roleplay-lines" class="line-chips"></div>
             <label class="roleplay-input-label" for="roleplay-input">Your Japanese</label>
-            <textarea id="roleplay-input" rows="3" maxlength="500" placeholder="日本語を入力…"></textarea>
+            <textarea id="roleplay-input" rows="3" maxlength="500" placeholder="Type Japanese…"></textarea>
             <button id="roleplay-send" type="button" class="reveal-button">Send practice turn</button>
             <p id="roleplay-error" class="roleplay-error" hidden></p>
             <section id="roleplay-observation" class="observation" hidden>
@@ -157,6 +164,29 @@
       <p id="abort-meaning" class="abort-meaning"></p>
       <p class="abort-instruction">Say it once, then show this screen.</p>
       <button type="button" class="abort-close" data-close-dialog="abort-dialog">Close</button>
+    </dialog>
+
+    <dialog id="skill-map-dialog" class="map-dialog">
+      <div class="dialog-header map-dialog-header">
+        <div>
+          <p class="eyebrow">YOUR TRIP LANGUAGE</p>
+          <h2>Skill map</h2>
+        </div>
+        <button type="button" class="dialog-close" data-close-dialog="skill-map-dialog" aria-label="Close skill map">×</button>
+      </div>
+      <p id="map-next" class="map-next"></p>
+      <div class="map-toolbar">
+        <div class="map-legend" aria-label="Skill status legend">
+          <span data-status="locked">Locked</span>
+          <span data-status="unseen">Unseen</span>
+          <span data-status="learning">Learning</span>
+          <span data-status="ready">Ready</span>
+        </div>
+        <button id="map-clear-focus" type="button" class="text-button">Clear practice focus</button>
+      </div>
+      <aside id="map-detail" class="map-detail" hidden></aside>
+      <div id="map-islands" class="map-islands"></div>
+      <button type="button" class="reveal-button map-done" data-close-dialog="skill-map-dialog">Back to practice</button>
     </dialog>
 
     <div id="toast" class="toast" role="status"></div>

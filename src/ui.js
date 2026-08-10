@@ -1,4 +1,5 @@
 import { probabilityKnown } from "./mastery.js";
+import { buildSkillMap, practiceTargetFor } from "./map.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
@@ -15,6 +16,15 @@ const dom = {
   error: document.querySelector("#error"),
   placeholder: document.querySelector("#placeholder-warning"),
   progress: document.querySelector("#progress"),
+  focusBanner: document.querySelector("#focus-banner"),
+  focusSummary: document.querySelector("#focus-summary"),
+  focusClear: document.querySelector("#focus-clear"),
+  mapOpen: document.querySelector("#map-open"),
+  mapDialog: document.querySelector("#skill-map-dialog"),
+  mapNext: document.querySelector("#map-next"),
+  mapClearFocus: document.querySelector("#map-clear-focus"),
+  mapDetail: document.querySelector("#map-detail"),
+  mapIslands: document.querySelector("#map-islands"),
   sheetOpen: document.querySelector("#sheet-open"),
   sheetDialog: document.querySelector("#phone-sheet"),
   sheetScenario: document.querySelector("#sheet-scenario"),
@@ -78,6 +88,7 @@ let roleplayAvailable = false;
 let roleplayHistory = [];
 let pendingRoleplayResult = null;
 let forcedFurigana = new Set();
+let selectedMapSkillId = null;
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
@@ -229,7 +240,9 @@ function renderRoleplayObservation(result) {
   dom.roleplayOutcomes.replaceChildren();
   for (const observation of result.observations) {
     const entry = document.createElement("li");
-    entry.textContent = `${skillLabel(observation.skillId)}: ${observation.outcome.replace("_", " ")}`;
+    const label = document.createElement("span");
+    renderJapanese(label, skillLabel(observation.skillId));
+    entry.append(label, document.createTextNode(`: ${observation.outcome.replace("_", " ")}`));
     entry.dataset.outcome = observation.outcome;
     dom.roleplayOutcomes.append(entry);
   }
@@ -337,6 +350,286 @@ function showToast(message) {
 
 function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
+}
+
+function focusDescription() {
+  const focus = state.focus;
+  if (focus?.skillId) return skillLabel(focus.skillId);
+  const scenario = scenarioById(focus?.scenarioId);
+  if (!scenario) return "";
+  return focus.mode === "reading" ? `${scenario.title} readings` : scenario.title;
+}
+
+function renderFocus() {
+  const description = focusDescription();
+  dom.focusBanner.hidden = !description;
+  dom.focusSummary.replaceChildren();
+  if (description) {
+    dom.focusSummary.append(document.createTextNode("Practice focus: "));
+    const label = document.createElement("strong");
+    renderJapanese(label, description);
+    dom.focusSummary.append(label, document.createTextNode(". This overrides automatic route selection."));
+  }
+  dom.focusClear.hidden = !description;
+  dom.mapClearFocus.hidden = !description;
+}
+
+function setPracticeFocus({ scenarioId, skillId = null, mode = null }, message) {
+  state = { ...state, focus: { scenarioId, skillId, mode } };
+  saveState(state);
+  renderCard();
+  if (dom.mapDialog.open) dom.mapDialog.close();
+  showToast(message);
+}
+
+function clearPracticeFocus() {
+  if (!focusDescription()) return;
+  state = { ...state, focus: { scenarioId: null, skillId: null, mode: null } };
+  saveState(state);
+  renderCard();
+  if (dom.mapDialog.open) renderSkillMap();
+  showToast("Practice focus cleared");
+}
+
+function svgElement(name, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  return element;
+}
+
+function renderMapDetail(model, skillId) {
+  const node = model.islands.flatMap((island) => island.nodes).find((entry) => entry.id === skillId);
+  if (!node) {
+    dom.mapDetail.hidden = true;
+    return;
+  }
+
+  selectedMapSkillId = skillId;
+  dom.mapDetail.replaceChildren();
+  dom.mapDetail.hidden = false;
+
+  const title = document.createElement("h3");
+  renderJapanese(title, node.label);
+  const status = document.createElement("div");
+  status.className = "map-detail-status";
+  const statusChip = document.createElement("span");
+  statusChip.className = "map-status-chip";
+  statusChip.dataset.status = node.status;
+  statusChip.textContent = node.status[0].toUpperCase() + node.status.slice(1);
+  const knownChip = document.createElement("span");
+  knownChip.className = "map-status-chip";
+  knownChip.textContent = `${node.knownPercent}% BKT · ${node.attempts} observations`;
+  status.append(statusChip, knownChip);
+  dom.mapDetail.append(title, status);
+
+  const item = items.find((candidate) => candidate.skillId === skillId && candidate.mode !== "reading")
+    ?? items.find((candidate) => candidate.skillId === skillId);
+  if (item) {
+    const sample = document.createElement("p");
+    sample.className = "map-detail-sample";
+    sample.lang = "ja";
+    renderJapanese(sample, item.prompt);
+    dom.mapDetail.append(sample);
+  }
+
+  if (model.current?.skillId === skillId) {
+    const note = document.createElement("p");
+    note.className = "map-detail-note";
+    note.textContent = `This is the current next card: ${model.current.reason}.`;
+    dom.mapDetail.append(note);
+  }
+
+  const prerequisites = node.prerequisites;
+  if (prerequisites.length > 0) {
+    const list = document.createElement("ul");
+    list.className = "map-prerequisites";
+    for (const prerequisiteId of prerequisites) {
+      const entry = document.createElement("li");
+      const label = document.createElement("span");
+      renderJapanese(label, skillLabel(prerequisiteId));
+      const known = Math.round(probabilityKnown(state.skills[prerequisiteId]) * 100);
+      entry.append(label, document.createTextNode(` · ${known}% BKT`));
+      list.append(entry);
+    }
+    dom.mapDetail.append(list);
+  } else {
+    const note = document.createElement("p");
+    note.className = "map-detail-note";
+    note.textContent = "No prerequisite — this branch is available immediately.";
+    dom.mapDetail.append(note);
+  }
+
+  const targetId = practiceTargetFor(tree, state, skillId);
+  const targetItem = targetId
+    ? items.find((candidate) => candidate.skillId === targetId && candidate.mode !== "reading")
+      ?? items.find((candidate) => candidate.skillId === targetId)
+    : null;
+  const practice = document.createElement("button");
+  practice.type = "button";
+  practice.className = "reveal-button";
+  practice.disabled = !targetItem;
+  if (!targetItem) {
+    practice.textContent = "No practice card available";
+  } else if (targetId === skillId) {
+    practice.textContent = "Practice this skill";
+  } else {
+    practice.append(document.createTextNode("Practice prerequisite: "));
+    const targetLabel = document.createElement("span");
+    renderJapanese(targetLabel, skillLabel(targetId));
+    practice.append(targetLabel);
+  }
+  practice.addEventListener("click", () => {
+    setPracticeFocus({ scenarioId: targetItem.scenarioId, skillId: targetId }, "Skill focus set");
+  });
+  dom.mapDetail.append(practice);
+}
+
+function renderMapIsland(model, island) {
+  const details = document.createElement("details");
+  details.className = "map-island";
+  details.dataset.scenario = island.id;
+  details.open = island.id === model.current?.scenarioId
+    || island.focused
+    || island.readingsFocused
+    || island.nodes.some((node) => node.id === selectedMapSkillId);
+
+  const summary = document.createElement("summary");
+  const heading = document.createElement("span");
+  heading.className = "map-island-title";
+  heading.textContent = island.title;
+  const stats = document.createElement("span");
+  stats.className = "map-island-stats";
+  stats.textContent = `${island.phraseReady}/${island.phraseTotal} phrases · ${island.readingReady}/${island.readingTotal} readings`;
+  summary.append(heading, stats);
+
+  const body = document.createElement("div");
+  body.className = "map-island-body";
+  const purpose = document.createElement("p");
+  purpose.className = "map-island-purpose";
+  purpose.textContent = island.purpose;
+  const actions = document.createElement("div");
+  actions.className = "map-island-actions";
+  const focusScenario = document.createElement("button");
+  focusScenario.type = "button";
+  focusScenario.className = "small-button";
+  focusScenario.dataset.active = String(island.focused);
+  focusScenario.textContent = island.focused ? "Scenario focused" : "Practice this scenario";
+  focusScenario.addEventListener("click", () => {
+    setPracticeFocus({ scenarioId: island.id }, `Focused ${island.title}`);
+  });
+  actions.append(focusScenario);
+
+  const viewport = document.createElement("div");
+  viewport.className = "map-canvas-scroll";
+  const svg = svgElement("svg", {
+    class: "map-canvas",
+    viewBox: `0 0 ${island.width} ${island.height}`,
+    width: island.width,
+    height: island.height,
+    role: "group",
+    "aria-label": `${island.title} prerequisite map`
+  });
+  const markerId = `map-arrow-${island.id.replace(/[^a-z0-9-]/gi, "-")}`;
+  const defs = svgElement("defs");
+  const marker = svgElement("marker", {
+    id: markerId,
+    viewBox: "0 0 10 10",
+    refX: 9,
+    refY: 5,
+    markerWidth: 5,
+    markerHeight: 5,
+    orient: "auto-start-reverse"
+  });
+  marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#9aaba1" }));
+  defs.append(marker);
+  svg.append(defs);
+
+  for (const edge of island.edges) {
+    svg.append(svgElement("path", {
+      class: "map-edge",
+      d: edge.d,
+      "marker-end": `url(#${markerId})`
+    }));
+  }
+  for (const node of island.nodes) {
+    const container = svgElement("foreignObject", {
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height
+    });
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "map-node";
+    button.dataset.status = node.status;
+    button.dataset.next = String(node.next);
+    button.dataset.focused = String(node.focused);
+    button.dataset.skill = node.id;
+    button.setAttribute("aria-pressed", String(node.id === selectedMapSkillId));
+    button.setAttribute("aria-label", `${node.label}: ${node.status}, ${node.knownPercent}% known`);
+    const label = document.createElement("span");
+    label.className = "map-node-title";
+    renderJapanese(label, node.label);
+    const meta = document.createElement("span");
+    meta.className = "map-node-meta";
+    meta.textContent = `${node.knownPercent}% · ${node.status}${node.externalPrerequisiteCount ? ` · ${node.externalPrerequisiteCount} outside` : ""}`;
+    button.append(label, meta);
+    button.addEventListener("click", () => {
+      dom.mapIslands.querySelectorAll(".map-node[aria-pressed='true']")
+        .forEach((entry) => entry.setAttribute("aria-pressed", "false"));
+      button.setAttribute("aria-pressed", "true");
+      renderMapDetail(model, node.id);
+      dom.mapDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    container.append(button);
+    svg.append(container);
+  }
+  viewport.append(svg);
+  body.append(purpose, actions, viewport);
+
+  if (island.readingTotal > 0) {
+    const readingCluster = document.createElement("button");
+    readingCluster.type = "button";
+    readingCluster.className = "map-reading-cluster";
+    readingCluster.dataset.focused = String(island.readingsFocused);
+    readingCluster.dataset.next = String(island.nextReading);
+    readingCluster.setAttribute("aria-label", `Practice ${island.title} readings`);
+    const total = document.createElement("strong");
+    total.textContent = `Reading cluster · ${island.readingReady}/${island.readingTotal} furigana-ready`;
+    const weakest = document.createElement("span");
+    const weakText = island.weakestReadings
+      .map((entry) => entry.term)
+      .join(" · ");
+    renderJapanese(weakest, `Needs work: ${weakText}`);
+    readingCluster.append(total, weakest);
+    readingCluster.addEventListener("click", () => {
+      setPracticeFocus({ scenarioId: island.id, mode: "reading" }, `Focused ${island.title} readings`);
+    });
+    body.append(readingCluster);
+  }
+
+  details.append(summary, body);
+  return details;
+}
+
+function renderSkillMap() {
+  const model = buildSkillMap({ content, tree, readings, state, currentItem });
+  dom.mapNext.replaceChildren();
+  if (model.current) {
+    dom.mapNext.append(document.createTextNode("Next: "));
+    const label = document.createElement("strong");
+    renderJapanese(label, model.current.label);
+    dom.mapNext.append(label, document.createTextNode(` · ${model.current.reason}`));
+  } else {
+    dom.mapNext.textContent = "No next card is currently available.";
+  }
+
+  if (!selectedMapSkillId || !model.islands.some((island) => island.nodes.some((node) => node.id === selectedMapSkillId))) {
+    selectedMapSkillId = currentItem?.mode === "reading" ? null : currentItem?.skillId;
+  }
+  renderMapDetail(model, selectedMapSkillId);
+  dom.mapIslands.replaceChildren(...model.islands.map((island) => renderMapIsland(model, island)));
+  renderFocus();
 }
 
 function showAnswer(resultText = "") {
@@ -500,6 +793,7 @@ function renderCard() {
   renderEvidence();
   renderProgress();
   renderRoute();
+  renderFocus();
 }
 
 function populateRouteScenarios() {
@@ -512,6 +806,12 @@ function populateRouteScenarios() {
 }
 
 function bindEvents() {
+  dom.mapOpen.addEventListener("click", () => {
+    renderSkillMap();
+    dom.mapDialog.showModal();
+  });
+  dom.focusClear.addEventListener("click", clearPracticeFocus);
+  dom.mapClearFocus.addEventListener("click", clearPracticeFocus);
   dom.sheetOpen.addEventListener("click", () => {
     renderPhoneSheet(currentItem?.scenarioId);
     dom.sheetDialog.showModal();
