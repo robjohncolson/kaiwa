@@ -22,7 +22,14 @@ const config = {
   model: "test-model"
 };
 const validResult = {
-  staffReply: { ja: "お名前は？", meaning: "Your name?" },
+  staffReply: {
+    ja: "お名前は？",
+    parts: [
+      { text: "お名前", reading: "おなまえ" },
+      { text: "は？", reading: "" }
+    ],
+    meaning: "Your name?"
+  },
   observations: [{ skillId: "shimamura.pickup", outcome: "success" }],
   shouldAbort: false,
   hint: ""
@@ -76,6 +83,13 @@ test("provider observations may reference only scenario skills", () => {
   assert.throws(
     () => validateRoleplayResult({ ...validResult, surprise: true }, scenario),
     /unsupported fields/
+  );
+  assert.throws(
+    () => validateRoleplayResult({
+      ...validResult,
+      staffReply: { ja: "お名前は？", parts: [{ text: "お名前は？", reading: "" }], meaning: "Your name?" }
+    }, scenario),
+    /needs a kana reading/
   );
 });
 

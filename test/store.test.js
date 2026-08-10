@@ -33,6 +33,7 @@ test("BKT state round-trips through browser-like storage", () => {
   assert.equal(loaded.skills.one.attempts, 3);
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
+  assert.deepEqual(loaded.skills.one.observations.hint, { correct: 0, incorrect: 0 });
 });
 
 test("v1 Beta state migrates without discarding attempts or cram timing", () => {

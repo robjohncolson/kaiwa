@@ -18,7 +18,7 @@ Keep the product idea: a small, closed-loop trip drill with a local scheduler an
 
 1. **Mastery inflation:** three-choice recognition includes guessing and still does not prove production. Model the guess rate, keep reply cards distinct in content, and label the result a BKT estimate rather than “mastered.”
 2. **Bad LLM grades:** providers may return prose, malformed JSON, or reward plausible but unsafe improvisation. Validate against a strict schema, treat failures as ungraded, and never let the model write state directly.
-3. **Reading help becomes a crutch:** always-visible romaji or furigana defeats recognition. Keep the prompt bare and reveal kana only after the observation; do not add romaji to the default drill.
+3. **Reading help becomes a crutch:** always-visible romaji or furigana defeats recognition. Give every kanji contextual ruby, test each word separately without it, and retire its visible furigana only from reading BKT evidence. Asking to see a retired reading must count as evidence that it is not secure. Do not add default romaji.
 4. **The app trains isolated lines, not loops:** production-only cards fail as soon as staff responds. Every important scenario needs at least one staff-recognition item plus a fixed reply or abort path.
 5. **Field data leaks into a public tool:** real trip transcripts contain homes, coordinates, phone numbers, schedules, and names. Extract reusable language and local-reading rules, never live personal destinations.
 

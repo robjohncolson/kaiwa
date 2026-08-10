@@ -1,5 +1,11 @@
 import { probabilityKnown } from "./mastery.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
+import {
+  augmentTreeWithReadings,
+  readingEntriesIn,
+  readingSkillId,
+  tokenizeReadings
+} from "./readings.js";
 import { applyObservation, flattenItems, selectNextItem } from "./scheduler.js";
 import { clearState, createInitialState, loadState, saveState } from "./store.js";
 
@@ -28,6 +34,8 @@ const dom = {
   purpose: document.querySelector("#purpose"),
   prompt: document.querySelector("#prompt"),
   instruction: document.querySelector("#instruction"),
+  furiganaStatus: document.querySelector("#furigana-status"),
+  furiganaHelp: document.querySelector("#furigana-help"),
   options: document.querySelector("#options"),
   reveal: document.querySelector("#reveal"),
   answer: document.querySelector("#answer"),
@@ -60,13 +68,62 @@ const dom = {
 
 let content;
 let tree;
+let readings;
 let items;
+let readingSkillIds;
 let state;
 let currentItem;
 let answered = false;
 let roleplayAvailable = false;
 let roleplayHistory = [];
 let pendingRoleplayResult = null;
+let forcedFurigana = new Set();
+
+function showReadingFor(entry) {
+  const skill = state.skills[readingSkillId(entry)];
+  return !skill || probabilityKnown(skill) < readings.furiganaThreshold;
+}
+
+function renderJapanese(element, value, { alwaysShow = false, neverShow = false } = {}) {
+  element.replaceChildren();
+  for (const segment of tokenizeReadings(value, readings)) {
+    if (!segment.entry) {
+      element.append(document.createTextNode(segment.text));
+      continue;
+    }
+
+    const ruby = document.createElement("ruby");
+    const base = document.createElement("span");
+    const reading = document.createElement("rt");
+    base.textContent = segment.text;
+    reading.textContent = segment.entry.reading;
+    const visible = alwaysShow || (!neverShow && (
+      forcedFurigana.has(segment.entry.id) || showReadingFor(segment.entry)
+    ));
+    ruby.classList.toggle("furigana-hidden", !visible);
+    ruby.dataset.readingSkill = readingSkillId(segment.entry);
+    reading.setAttribute("aria-hidden", String(!visible));
+    ruby.append(base, reading);
+    element.append(ruby);
+  }
+}
+
+function renderRubyParts(element, parts) {
+  element.replaceChildren();
+  for (const part of parts) {
+    if (!part.reading) {
+      element.append(document.createTextNode(part.text));
+      continue;
+    }
+    const ruby = document.createElement("ruby");
+    const base = document.createElement("span");
+    const reading = document.createElement("rt");
+    base.textContent = part.text;
+    reading.textContent = part.reading;
+    ruby.append(base, reading);
+    element.append(ruby);
+  }
+}
 
 function scenarioById(id) {
   return content.scenarios.find((scenario) => scenario.id === id);
@@ -87,11 +144,11 @@ function renderPhoneSheet(scenarioId) {
     const japanese = document.createElement("p");
     japanese.className = "sheet-japanese";
     japanese.lang = "ja";
-    japanese.textContent = line.ja;
+    renderJapanese(japanese, line.ja, { alwaysShow: true });
 
     const meaning = document.createElement("p");
     meaning.className = "sheet-meaning";
-    meaning.textContent = line.meaning;
+    renderJapanese(meaning, line.meaning, { alwaysShow: true });
 
     card.append(japanese, meaning);
     dom.sheetLines.append(card);
@@ -109,12 +166,12 @@ function populateSafetyTools() {
   const abortLine = content.scenarios
     .flatMap((scenario) => scenario.allowedUserLines)
     .find((line) => line.skillId === "abort.wakarimasen");
-  dom.abortJapanese.textContent = abortLine.ja;
+  renderJapanese(dom.abortJapanese, abortLine.ja, { alwaysShow: true });
   dom.abortMeaning.textContent = abortLine.meaning;
   renderPhoneSheet(content.scenarios[0].id);
 }
 
-function appendTranscript(role, japanese, meaning = "") {
+function appendTranscript(role, japanese, meaning = "", rubyParts = null) {
   const message = document.createElement("article");
   message.className = `transcript-message transcript-${role}`;
 
@@ -124,13 +181,14 @@ function appendTranscript(role, japanese, meaning = "") {
   const text = document.createElement("p");
   text.className = "transcript-japanese";
   text.lang = "ja";
-  text.textContent = japanese;
+  if (rubyParts) renderRubyParts(text, rubyParts);
+  else renderJapanese(text, japanese, { alwaysShow: true });
   message.append(label, text);
 
   if (meaning) {
     const translation = document.createElement("p");
     translation.className = "transcript-meaning";
-    translation.textContent = meaning;
+    renderJapanese(translation, meaning, { alwaysShow: true });
     message.append(translation);
   }
   dom.roleplayTranscript.append(message);
@@ -146,7 +204,7 @@ function renderRoleplayLines() {
     button.className = line.skillId === scenario.abortSkillId
       ? "line-chip line-chip-abort"
       : "line-chip";
-    button.textContent = line.ja;
+    renderJapanese(button, line.ja, { alwaysShow: true });
     button.disabled = !roleplayAvailable;
     button.addEventListener("click", () => {
       dom.roleplayInput.value = line.ja;
@@ -201,7 +259,7 @@ async function sendRoleplayTurn() {
       history: priorHistory,
       userText
     });
-    appendTranscript("assistant", result.staffReply.ja, result.staffReply.meaning);
+    appendTranscript("assistant", result.staffReply.ja, result.staffReply.meaning, result.staffReply.parts);
     roleplayHistory = [
       ...priorHistory,
       { role: "user", content: userText },
@@ -296,7 +354,9 @@ function renderOptions(item) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "option-button";
-    button.textContent = option.label;
+    renderJapanese(button, option.label, {
+      neverShow: item.mode === "reading" || item.mode === "focus"
+    });
     button.dataset.correct = String(option.correct);
     button.addEventListener("click", () => {
       if (answered) return;
@@ -313,6 +373,49 @@ function renderOptions(item) {
     });
     dom.options.append(button);
   }
+}
+
+function renderPromptFurigana() {
+  const isReadingTest = currentItem.mode === "reading" || currentItem.mode === "focus";
+  renderJapanese(dom.prompt, currentItem.prompt, { neverShow: isReadingTest });
+  const entries = readingEntriesIn(currentItem.prompt, readings);
+
+  if (isReadingTest) {
+    dom.furiganaStatus.textContent = "Reading test · furigana hidden until the answer";
+    dom.furiganaHelp.hidden = true;
+    return;
+  }
+  if (entries.length === 0) {
+    dom.furiganaStatus.textContent = "No kanji reading in this prompt";
+    dom.furiganaHelp.hidden = true;
+    return;
+  }
+
+  const retired = entries.filter((entry) => !showReadingFor(entry) && !forcedFurigana.has(entry.id));
+  const shown = entries.length - retired.length;
+  dom.furiganaStatus.textContent = `${shown} supported · ${retired.length} retired by reading BKT`;
+  dom.furiganaHelp.hidden = retired.length === 0;
+  dom.furiganaHelp.textContent = `Show ${retired.length} retired ${retired.length === 1 ? "reading" : "readings"}`;
+}
+
+function showRetiredFurigana() {
+  const entries = readingEntriesIn(currentItem.prompt, readings)
+    .filter((entry) => !showReadingFor(entry) && !forcedFurigana.has(entry.id));
+  if (entries.length === 0) return;
+
+  const now = Date.now();
+  for (const [index, entry] of entries.entries()) {
+    state = applyObservation(state, {
+      id: `hint.${entry.id}.${now}`,
+      skillId: readingSkillId(entry),
+      options: [{}, {}, {}]
+    }, false, now + index, { source: "hint" });
+    forcedFurigana.add(entry.id);
+  }
+  saveState(state);
+  renderPromptFurigana();
+  renderProgress();
+  showToast(`${entries.length} reading ${entries.length === 1 ? "hint" : "hints"} recorded`);
 }
 
 function recordUnsure() {
@@ -335,9 +438,12 @@ function renderEvidence() {
 }
 
 function renderProgress() {
-  const tried = Object.values(state.skills).filter((skill) => skill.attempts > 0).length;
   const reviewLabel = state.totalReviews === 1 ? "review" : "reviews";
-  dom.progress.textContent = `${state.totalReviews} ${reviewLabel} · ${tried}/${tree.nodes.length} skills seen · saved on this device`;
+  const readingIds = [...readingSkillIds];
+  const phraseIds = tree.nodes.map((node) => node.id).filter((id) => !readingSkillIds.has(id));
+  const readingSeen = readingIds.filter((id) => state.skills[id]?.attempts > 0).length;
+  const phraseSeen = phraseIds.filter((id) => state.skills[id]?.attempts > 0).length;
+  dom.progress.textContent = `${state.totalReviews} ${reviewLabel} · phrases ${phraseSeen}/${phraseIds.length} · readings ${readingSeen}/${readingIds.length} · saved here`;
 }
 
 function renderRoute() {
@@ -363,6 +469,7 @@ function renderCard() {
   }
 
   answered = false;
+  forcedFurigana = new Set();
   dom.answer.hidden = true;
   dom.reveal.hidden = false;
   dom.nextCard.hidden = true;
@@ -371,23 +478,24 @@ function renderCard() {
   dom.mode.textContent = {
     meaning: "Japanese → meaning",
     reply: "Staff → reply",
-    focus: "Word zoom"
+    focus: "Word zoom",
+    reading: "Kanji → reading"
   }[currentItem.mode] ?? "Recognition";
   dom.purpose.textContent = currentItem.scenarioPurpose;
-  dom.prompt.textContent = currentItem.prompt;
   dom.prompt.lang = "ja";
   dom.prompt.classList.add("japanese-prompt");
-  dom.prompt.classList.toggle("focus-prompt", currentItem.mode === "focus");
+  dom.prompt.classList.toggle("focus-prompt", ["focus", "reading"].includes(currentItem.mode));
   dom.instruction.textContent = currentItem.instruction ?? "Choose the best answer.";
-  dom.japanese.textContent = currentItem.answer.ja;
+  renderPromptFurigana();
+  renderJapanese(dom.japanese, currentItem.answer.ja, { alwaysShow: true });
   dom.reading.textContent = currentItem.answer.reading ?? "";
   dom.reading.hidden = !currentItem.answer.reading
     || currentItem.answer.reading === currentItem.answer.ja;
-  dom.meaning.textContent = currentItem.answer.meaning;
-  dom.note.textContent = currentItem.answer.note ?? "";
+  renderJapanese(dom.meaning, currentItem.answer.meaning, { alwaysShow: true });
+  renderJapanese(dom.note, currentItem.answer.note ?? "", { alwaysShow: true });
   dom.wordZoom.hidden = !currentItem.zoom;
-  dom.zoomContext.textContent = currentItem.zoom?.context ?? "";
-  dom.zoomBreakdown.textContent = currentItem.zoom?.breakdown ?? "";
+  renderJapanese(dom.zoomContext, currentItem.zoom?.context ?? "", { alwaysShow: true });
+  renderJapanese(dom.zoomBreakdown, currentItem.zoom?.breakdown ?? "", { alwaysShow: true });
   renderOptions(currentItem);
   renderEvidence();
   renderProgress();
@@ -430,6 +538,7 @@ function bindEvents() {
     showToast("Sensor observation discarded");
   });
   dom.reveal.addEventListener("click", recordUnsure);
+  dom.furiganaHelp.addEventListener("click", showRetiredFurigana);
   dom.nextCard.addEventListener("click", renderCard);
   dom.routeApply.addEventListener("click", () => {
     const minutes = Number(dom.routeMinutes.value);
@@ -470,11 +579,14 @@ async function loadJson(path) {
 
 async function start() {
   try {
-    [content, tree] = await Promise.all([
+    [content, tree, readings] = await Promise.all([
       loadJson("./data/scenarios.json"),
-      loadJson("./data/tree.json")
+      loadJson("./data/tree.json"),
+      loadJson("./data/readings.json")
     ]);
-    items = flattenItems(content);
+    tree = augmentTreeWithReadings(tree, readings);
+    readingSkillIds = new Set(readings.entries.map(readingSkillId));
+    items = flattenItems(content, readings);
     state = loadState(tree);
 
     const name = content.placeholders.nameKatakana;

@@ -1,4 +1,5 @@
 import { observeBkt, probabilityKnown } from "./mastery.js";
+import { createReadingItems } from "./readings.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
   2 * 60 * 1000,
@@ -7,8 +8,8 @@ export const CRAM_INTERVALS_MS = Object.freeze([
   2 * 60 * 60 * 1000
 ]);
 
-export function flattenItems(contentPack) {
-  return contentPack.scenarios.flatMap((scenario) =>
+export function flattenItems(contentPack, readings = null) {
+  const scenarioItems = contentPack.scenarios.flatMap((scenario) =>
     scenario.items.map((item) => ({
       ...item,
       scenarioId: scenario.id,
@@ -16,6 +17,9 @@ export function flattenItems(contentPack) {
       scenarioPurpose: scenario.purpose
     }))
   );
+  return readings
+    ? [...scenarioItems, ...createReadingItems(readings, contentPack)]
+    : scenarioItems;
 }
 
 export function prerequisitesFor(tree, skillId) {

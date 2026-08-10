@@ -14,9 +14,23 @@ export const ROLEPLAY_RESPONSE_SCHEMA = Object.freeze({
     staffReply: {
       type: "object",
       additionalProperties: false,
-      required: ["ja", "meaning"],
+      required: ["ja", "parts", "meaning"],
       properties: {
         ja: { type: "string", maxLength: 500 },
+        parts: {
+          type: "array",
+          minItems: 1,
+          maxItems: 40,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["text", "reading"],
+            properties: {
+              text: { type: "string", maxLength: 100 },
+              reading: { type: "string", maxLength: 100 }
+            }
+          }
+        },
         meaning: { type: "string", maxLength: 500 }
       }
     },
@@ -135,6 +149,7 @@ Rules:
 - Roleplay only this scenario. Reply as staff or host in short, natural Japanese.
 - Do not add route advice, policy claims, promises, prices, or facts absent from the scenario.
 - Grade only the traveler's latest message against the allowed lines.
+- Split staffReply.ja into staffReply.parts. Every part containing kanji must have its contextual kana reading; kana, punctuation, and spaces use an empty reading. The part texts must join exactly to ja.
 - success means the intended fixed line was clear; partial means recognizable but flawed; miss means wrong or unusable; not_tested means no evidence.
 - Include each relevant allowed skill at most once. Use shouldAbort when the exchange has moved beyond the safe closed loop.
 - The hint must be an empty string when no hint is needed.
@@ -158,12 +173,34 @@ export function validateRoleplayResult(value, scenario) {
   if (!reply || typeof reply !== "object" || Array.isArray(reply)) {
     throw new RoleplayProviderError("Provider result lacked staffReply.");
   }
-  validateExactKeys(reply, ["ja", "meaning"], "staffReply");
+  validateExactKeys(reply, ["ja", "parts", "meaning"], "staffReply");
   if (typeof reply.ja !== "string" || reply.ja.length === 0 || reply.ja.length > 500) {
     throw new RoleplayProviderError("staffReply.ja was invalid.");
   }
   if (typeof reply.meaning !== "string" || reply.meaning.length > 500) {
     throw new RoleplayProviderError("staffReply.meaning was invalid.");
+  }
+  if (!Array.isArray(reply.parts) || reply.parts.length < 1 || reply.parts.length > 40) {
+    throw new RoleplayProviderError("staffReply.parts was invalid.");
+  }
+  const parts = reply.parts.map((part) => {
+    if (!part || typeof part !== "object" || Array.isArray(part)) {
+      throw new RoleplayProviderError("A staffReply part was invalid.");
+    }
+    validateExactKeys(part, ["text", "reading"], "staffReply part");
+    if (typeof part.text !== "string" || part.text.length === 0 || part.text.length > 100) {
+      throw new RoleplayProviderError("A staffReply part had invalid text.");
+    }
+    if (typeof part.reading !== "string" || part.reading.length > 100 || /\p{Script=Han}/u.test(part.reading)) {
+      throw new RoleplayProviderError("A staffReply part had an invalid reading.");
+    }
+    if (/\p{Script=Han}/u.test(part.text) && part.reading.length === 0) {
+      throw new RoleplayProviderError("Every staffReply kanji part needs a kana reading.");
+    }
+    return { text: part.text, reading: part.reading };
+  });
+  if (parts.map((part) => part.text).join("") !== reply.ja) {
+    throw new RoleplayProviderError("staffReply parts did not reconstruct ja.");
   }
   if (typeof value.shouldAbort !== "boolean" || typeof value.hint !== "string" || value.hint.length > 500) {
     throw new RoleplayProviderError("Provider guidance fields were invalid.");
@@ -189,7 +226,7 @@ export function validateRoleplayResult(value, scenario) {
   }
 
   return {
-    staffReply: { ja: reply.ja, meaning: reply.meaning },
+    staffReply: { ja: reply.ja, parts, meaning: reply.meaning },
     observations: value.observations.map(({ skillId, outcome }) => ({ skillId, outcome })),
     shouldAbort: value.shouldAbort,
     hint: value.hint

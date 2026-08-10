@@ -17,7 +17,8 @@ function newSkillState(tree, node, now) {
     incorrect: 0,
     observations: {
       card: { correct: 0, incorrect: 0 },
-      roleplay: { correct: 0, incorrect: 0 }
+      roleplay: { correct: 0, incorrect: 0 },
+      hint: { correct: 0, incorrect: 0 }
     },
     cramStep: 0,
     cramDue: now,
@@ -79,7 +80,8 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
     ...savedSkill,
     observations: {
       card: { ...initialSkill.observations.card, ...savedSkill.observations?.card },
-      roleplay: { ...initialSkill.observations.roleplay, ...savedSkill.observations?.roleplay }
+      roleplay: { ...initialSkill.observations.roleplay, ...savedSkill.observations?.roleplay },
+      hint: { ...initialSkill.observations.hint, ...savedSkill.observations?.hint }
     }
   };
 }
