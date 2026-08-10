@@ -1,4 +1,4 @@
-const CACHE_NAME = "kaiwa-shell-v11";
+const CACHE_NAME = "kaiwa-shell-v12";
 const API_PATH = new URL("./api/", self.registration.scope).pathname;
 const APP_SHELL = [
   "./",
@@ -17,6 +17,7 @@ const APP_SHELL = [
   "./src/mission.js",
   "./src/providers/llm.js",
   "./src/production.js",
+  "./src/repair.js",
   "./src/readings.js",
   "./src/scheduler.js",
   "./src/session.js",

@@ -64,6 +64,15 @@
           <p id="field-summary" class="field-summary"></p>
         </details>
 
+        <section id="repair-launcher" class="repair-launcher" aria-labelledby="repair-launch-title" hidden>
+          <div>
+            <p class="eyebrow">FIELD REPAIR</p>
+            <h2 id="repair-launch-title">Repair the conversation.</h2>
+            <p id="repair-summary" class="repair-summary"></p>
+          </div>
+          <button id="repair-open" type="button" class="repair-open-button">Start repair</button>
+        </section>
+
         <div class="progress-row">
           <p id="progress" class="progress"></p>
           <button id="map-open" type="button" class="map-button">Skill map</button>
@@ -266,6 +275,26 @@
         <button id="session-again" type="button" class="reveal-button">Build another session</button>
         <button type="button" class="text-button session-done" data-close-dialog="session-dialog">Done</button>
       </section>
+    </dialog>
+
+    <dialog id="repair-dialog" class="repair-dialog">
+      <div class="dialog-header repair-dialog-header">
+        <div>
+          <p class="eyebrow">FIELD REPAIR</p>
+          <h2 id="repair-title">Repair the conversation.</h2>
+        </div>
+        <button type="button" class="dialog-close" data-close-dialog="repair-dialog" aria-label="Close field repair">×</button>
+      </div>
+      <p id="repair-status" class="repair-status"></p>
+      <ol class="session-stages repair-stages">
+        <li id="repair-stage-recognition">Recognize the partner prompt</li>
+        <li id="repair-stage-reading">Read one difficult word without furigana</li>
+        <li id="repair-stage-production">Say the weakest fixed response</li>
+        <li id="repair-stage-abort">Recover with the timed abort</li>
+        <li id="repair-stage-revisit">Revisit both spoken lines after ten minutes</li>
+      </ol>
+      <button id="repair-action" type="button" class="reveal-button">Start repair</button>
+      <button id="repair-end" type="button" class="text-button repair-end" hidden>End repair; keep recorded evidence</button>
     </dialog>
 
     <dialog id="mission-dialog" class="mission-dialog">

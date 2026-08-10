@@ -14,6 +14,16 @@ import {
 } from "./mission.js";
 import { fieldCounts, latestFieldOutcome, recordFieldOutcome } from "./field.js";
 import { ABORT_TARGET_MS, applyProductionObservation, productionIsReady } from "./production.js";
+import {
+  archiveCompletedRepair,
+  beginRepairRevisit,
+  buildRepairSession,
+  completeRepairRound,
+  currentRepairCard,
+  recordRepairCard,
+  repairHandledFieldEvent,
+  REPAIRABLE_FIELD_OUTCOMES
+} from "./repair.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
@@ -128,6 +138,20 @@ const dom = {
   routeSummary: document.querySelector("#route-summary"),
   fieldScenario: document.querySelector("#field-scenario"),
   fieldSummary: document.querySelector("#field-summary"),
+  repairLauncher: document.querySelector("#repair-launcher"),
+  repairLaunchTitle: document.querySelector("#repair-launch-title"),
+  repairSummary: document.querySelector("#repair-summary"),
+  repairOpen: document.querySelector("#repair-open"),
+  repairDialog: document.querySelector("#repair-dialog"),
+  repairTitle: document.querySelector("#repair-title"),
+  repairStatus: document.querySelector("#repair-status"),
+  repairStageRecognition: document.querySelector("#repair-stage-recognition"),
+  repairStageReading: document.querySelector("#repair-stage-reading"),
+  repairStageProduction: document.querySelector("#repair-stage-production"),
+  repairStageAbort: document.querySelector("#repair-stage-abort"),
+  repairStageRevisit: document.querySelector("#repair-stage-revisit"),
+  repairAction: document.querySelector("#repair-action"),
+  repairEnd: document.querySelector("#repair-end"),
   scenario: document.querySelector("#scenario"),
   mode: document.querySelector("#mode"),
   purpose: document.querySelector("#purpose"),
@@ -186,6 +210,7 @@ let selectedMapSkillId = null;
 let completedMissionRun = null;
 let completedMissionWeakestSkillId = null;
 let missionTimerId = null;
+let repairTimerId = null;
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
@@ -464,6 +489,16 @@ function guidedMission(session = guidedSession()) {
   return missionById(missionPack, session?.missionId);
 }
 
+function repairSession() {
+  return state.repair?.active ?? null;
+}
+
+function missionForId(missionId) {
+  const repair = repairSession();
+  if (repair?.mission?.id === missionId) return repair.mission;
+  return missionById(missionPack, missionId);
+}
+
 function renderSessionLauncher() {
   const session = guidedSession();
   if (!session) {
@@ -587,6 +622,12 @@ function openSessionDialog() {
 }
 
 function startGuidedSession() {
+  if (repairSession() && repairSession().phase !== "complete") {
+    if (dom.sessionDialog.open) dom.sessionDialog.close();
+    showToast("Finish or end the active field repair first");
+    openRepairDialog();
+    return;
+  }
   if (state.mission.active) {
     if (dom.sessionDialog.open) dom.sessionDialog.close();
     showToast("Finish the active mission first");
@@ -658,7 +699,7 @@ function renderMissionSummary() {
     noFurigana: result.noFurigana + (stats.noFuriganaRuns ?? 0)
   }), { runs: 0, clean: 0, production: 0, noFurigana: 0 });
   if (state.mission.active) {
-    const active = missionById(missionPack, state.mission.active.missionId);
+    const active = missionForId(state.mission.active.missionId);
     dom.missionSummary.textContent = `Resume ${active?.title ?? "active mission"} · step ${state.mission.active.stepIndex + 1}`;
     dom.missionOpen.textContent = "Resume mission";
     return;
@@ -776,7 +817,7 @@ function revealProductionStep() {
 
 function gradeProductionChoice(grade) {
   const active = state.mission.active;
-  const mission = missionById(missionPack, active?.missionId);
+  const mission = missionForId(active?.missionId);
   if (!active || !mission || active.mode !== "production" || active.awaitingAdvance) return;
   const run = gradeProductionStep(active, mission, grade);
   state = applyProductionObservation(state, run.observations.at(-1));
@@ -787,7 +828,7 @@ function gradeProductionChoice(grade) {
 
 function answerMissionChoice(selectedSkillId) {
   const active = state.mission.active;
-  const mission = missionById(missionPack, active?.missionId);
+  const mission = missionForId(active?.missionId);
   if (!active || !mission || active.awaitingAdvance) return;
   const step = mission.steps[active.stepIndex];
   const run = answerMissionStep(active, mission, selectedSkillId);
@@ -811,7 +852,7 @@ function answerMissionChoice(selectedSkillId) {
 
 function renderMissionStep() {
   const run = state.mission.active;
-  const mission = missionById(missionPack, run?.missionId);
+  const mission = missionForId(run?.missionId);
   if (!run || !mission) {
     renderMissionLobby();
     return;
@@ -908,7 +949,7 @@ function weakestMissionSkill(run) {
 }
 
 function renderMissionComplete(run) {
-  const mission = missionById(missionPack, run.missionId);
+  const mission = missionForId(run.missionId);
   completedMissionRun = run;
   completedMissionWeakestSkillId = weakestMissionSkill(run);
   const stats = statsForMission(mission.id);
@@ -966,6 +1007,12 @@ function startMission(
   hideFurigana = dom.missionChallenge.checked,
   mode = dom.missionMode.value
 ) {
+  const repair = repairSession();
+  if (repair && repair.phase !== "complete") {
+    showToast("Finish or end the active field repair first");
+    openRepairDialog();
+    return;
+  }
   const mission = missionById(missionPack, missionId);
   if (!mission) return;
   completedMissionRun = null;
@@ -1275,17 +1322,33 @@ function showAnswer(resultText = "") {
   dom.answer.hidden = false;
   dom.reveal.hidden = true;
   dom.nextCard.hidden = false;
+  const repair = repairSession();
   const session = guidedSession();
-  dom.nextCard.textContent = session?.phase === "mission"
+  dom.nextCard.textContent = repair?.phase === "mission"
+    ? "Start spoken repair"
+    : repair?.phase === "cards"
+      ? "Next repair check"
+      : session?.phase === "mission"
     ? "Start session mission"
     : session?.phase === "cards" ? "Next session card" : "Next card";
   dom.result.textContent = resultText;
 }
 
 function applyCardAnswer(item, correct, now = Date.now()) {
+  const activeRepair = repairSession();
+  const repairItem = currentRepairCard(activeRepair, items);
   const active = guidedSession();
   const sessionItem = currentSessionCard(active, items);
   state = applyObservation(state, item, correct, now);
+  if (repairItem?.id === item.id) {
+    state = {
+      ...state,
+      repair: {
+        ...state.repair,
+        active: recordRepairCard(activeRepair, item, correct, now)
+      }
+    };
+  }
   if (sessionItem?.id === item.id) {
     state = {
       ...state,
@@ -1321,6 +1384,7 @@ function renderOptions(item) {
       renderEvidence();
       renderProgress();
       renderSessionLauncher();
+      renderRepairLauncher();
     });
     dom.options.append(button);
   }
@@ -1384,6 +1448,7 @@ function recordUnsure() {
   renderEvidence();
   renderProgress();
   renderSessionLauncher();
+  renderRepairLauncher();
 }
 
 function renderEvidence() {
@@ -1442,11 +1507,243 @@ function renderFieldSummary(preferredScenarioId = null) {
   dom.fieldSummary.textContent = `Latest: ${fieldOutcomeLabels[latest.outcome]} · ${total} field ${total === 1 ? "result" : "results"} · practice priority adjusted locally`;
 }
 
+function repairOffer(scenarioId = dom.fieldScenario.value) {
+  const event = latestFieldOutcome(state.field, scenarioId);
+  if (!event || !REPAIRABLE_FIELD_OUTCOMES.includes(event.outcome)) return null;
+  if (repairHandledFieldEvent(state.repair, event.id)) return null;
+  if (!missionPack.missions.some((mission) => mission.scenarioId === event.scenarioId)) return null;
+  return event;
+}
+
+function stopRepairTimer() {
+  if (repairTimerId != null) window.clearInterval(repairTimerId);
+  repairTimerId = null;
+}
+
+function repairWaitText(session, now = Date.now()) {
+  const remaining = Math.max(0, session.revisitAt - now);
+  if (remaining === 0) return "Ten-minute revisit ready.";
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.ceil((remaining % 60000) / 1000);
+  return `Revisit in ${minutes}:${String(seconds).padStart(2, "0")}. It survives refresh.`;
+}
+
+function scheduleRepairTimer(session) {
+  stopRepairTimer();
+  if (session?.phase !== "waiting" || session.revisitAt <= Date.now()) return;
+  repairTimerId = window.setInterval(() => {
+    renderRepairLauncher();
+    if (dom.repairDialog.open) renderRepairDialog();
+  }, 1000);
+}
+
+function renderRepairLauncher() {
+  const active = repairSession();
+  const offer = repairOffer();
+  dom.repairLauncher.hidden = !active && !offer;
+  if (!active && !offer) {
+    stopRepairTimer();
+    return;
+  }
+  if (!active) {
+    const scenario = scenarioById(offer.scenarioId);
+    dom.repairLaunchTitle.textContent = `Repair ${scenario.title}.`;
+    dom.repairSummary.textContent = `${fieldOutcomeLabels[offer.outcome]} stays in the field log. Practice the weak prompt, reading, fixed response, and abort.`;
+    dom.repairOpen.textContent = "Start repair";
+    stopRepairTimer();
+    return;
+  }
+  const scenario = scenarioById(active.scenarioId);
+  dom.repairLaunchTitle.textContent = `${scenario.title} field repair`;
+  if (active.phase === "cards") {
+    dom.repairSummary.textContent = `${active.outcomes.length}/${active.cardIds.length} objective checks complete.`;
+    dom.repairOpen.textContent = "Continue repair";
+  } else if (active.phase === "mission") {
+    dom.repairSummary.textContent = active.round === "revisit"
+      ? "Ten-minute revisit: say the fixed line and timed abort again."
+      : "Objective checks complete. Say the fixed line and timed abort.";
+    dom.repairOpen.textContent = state.mission.active ? "Resume speaking" : "Start speaking";
+  } else if (active.phase === "waiting") {
+    dom.repairSummary.textContent = repairWaitText(active);
+    dom.repairOpen.textContent = active.revisitAt <= Date.now() ? "Start revisit" : "View repair";
+  } else {
+    dom.repairSummary.textContent = `Repair complete. Original field result remains ${fieldOutcomeLabels[active.fieldOutcome]}.`;
+    dom.repairOpen.textContent = "View result";
+  }
+  scheduleRepairTimer(active);
+}
+
+function repairStageStatuses(session) {
+  if (!session) return ["current", "upcoming", "upcoming", "upcoming", "upcoming"];
+  const recognitionDone = session.outcomes.length >= 1;
+  const readingDone = session.outcomes.length >= 2;
+  let production = readingDone ? "current" : "upcoming";
+  let abort = "upcoming";
+  let revisit = "upcoming";
+  if (session.phase === "mission" && session.round === "initial") {
+    const step = state.mission.active?.missionId === session.mission.id
+      ? state.mission.active.stepIndex
+      : 0;
+    production = step > 0 ? "done" : "current";
+    abort = step > 0 ? "current" : "upcoming";
+  }
+  if (["waiting", "complete"].includes(session.phase) || session.round === "revisit") {
+    production = "done";
+    abort = "done";
+  }
+  if (session.phase === "mission" && session.round === "revisit") revisit = "current";
+  if (session.phase === "complete") revisit = "done";
+  return [
+    recognitionDone ? "done" : "current",
+    readingDone ? "done" : recognitionDone ? "current" : "upcoming",
+    production,
+    abort,
+    revisit
+  ];
+}
+
+function renderRepairDialog() {
+  const active = repairSession();
+  const offer = repairOffer();
+  const scenarioId = active?.scenarioId ?? offer?.scenarioId;
+  const scenario = scenarioById(scenarioId);
+  dom.repairTitle.textContent = scenario ? `Repair ${scenario.title}.` : "Field repair";
+  const statuses = repairStageStatuses(active);
+  [
+    dom.repairStageRecognition,
+    dom.repairStageReading,
+    dom.repairStageProduction,
+    dom.repairStageAbort,
+    dom.repairStageRevisit
+  ].forEach((element, index) => setStageStatus(element, statuses[index]));
+  dom.repairEnd.hidden = !active || active.phase === "complete";
+  dom.repairAction.disabled = false;
+
+  if (!active) {
+    dom.repairStatus.textContent = offer
+      ? `${fieldOutcomeLabels[offer.outcome]} remains the real result. This repair adds two objective checks, two spoken recalls, and a ten-minute revisit without rewriting it.`
+      : "Log a difficult real conversation to build a repair."
+    dom.repairAction.textContent = offer ? "Start two-card repair" : "No repair available";
+    dom.repairAction.disabled = !offer;
+    return;
+  }
+  if (active.phase === "cards") {
+    dom.repairStatus.textContent = `Complete ${active.cardIds.length - active.outcomes.length} more objective ${active.cardIds.length - active.outcomes.length === 1 ? "check" : "checks"}, then retrieve the weakest fixed line aloud.`;
+    dom.repairAction.textContent = "Continue objective checks";
+  } else if (active.phase === "mission") {
+    dom.repairStatus.textContent = active.round === "revisit"
+      ? "No cards this time: retrieve the same fixed response and abort without furigana."
+      : "Choices are hidden. Say the weakest fixed response, then recover from the off-script turn within five seconds.";
+    dom.repairAction.textContent = state.mission.active ? "Resume spoken repair" : "Start spoken repair";
+  } else if (active.phase === "waiting") {
+    dom.repairStatus.textContent = `${repairWaitText(active)} The original ${fieldOutcomeLabels[active.fieldOutcome].toLowerCase()} result is unchanged.`;
+    dom.repairAction.textContent = active.revisitAt <= Date.now() ? "Start ten-minute revisit" : "Revisit not due yet";
+    dom.repairAction.disabled = active.revisitAt > Date.now();
+  } else {
+    const revisit = active.revisit;
+    dom.repairStatus.textContent = `Repair complete: ${revisit.clean}/${revisit.total} revisit lines said cleanly; abort ${(revisit.abortResponseMs / 1000).toFixed(1)}s. Field log still says ${fieldOutcomeLabels[active.fieldOutcome]}.`;
+    dom.repairAction.textContent = "Done";
+  }
+}
+
+function openRepairDialog() {
+  renderRepairDialog();
+  if (!dom.repairDialog.open) dom.repairDialog.showModal();
+}
+
+function startRepair() {
+  const currentSession = guidedSession();
+  if (currentSession && currentSession.phase !== "complete") {
+    showToast("Finish or end the guided session first");
+    return;
+  }
+  if (state.mission.active) {
+    showToast("Finish the active mission first");
+    return;
+  }
+  const event = repairOffer();
+  if (!event) return;
+  const repairState = archiveCompletedRepair(state.repair);
+  const cleanSession = currentSession?.phase === "complete"
+    ? archiveCompletedSession(state.session)
+    : state.session;
+  const active = buildRepairSession({ event, items, missionPack, state, now: Date.now() });
+  state = { ...state, repair: { ...repairState, active }, session: cleanSession };
+  saveState(state);
+  if (dom.repairDialog.open) dom.repairDialog.close();
+  renderCard();
+  document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  showToast("Field repair started");
+}
+
+function startRepairMission() {
+  const repair = repairSession();
+  if (!repair || repair.phase !== "mission") return;
+  if (state.mission.active) {
+    if (state.mission.active.missionId === repair.mission.id) openMissionDialog();
+    else showToast("Finish the active mission first");
+    return;
+  }
+  if (dom.repairDialog.open) dom.repairDialog.close();
+  completedMissionRun = null;
+  completedMissionWeakestSkillId = null;
+  saveMissionRun(createMissionRun(repair.mission, Date.now(), {
+    hideFurigana: repair.round === "revisit",
+    mode: "production"
+  }));
+  renderMissionStep();
+  dom.missionDialog.showModal();
+}
+
+function continueRepair() {
+  const repair = repairSession();
+  if (!repair) {
+    startRepair();
+    return;
+  }
+  if (repair.phase === "cards") {
+    if (dom.repairDialog.open) dom.repairDialog.close();
+    renderCard();
+    document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  } else if (repair.phase === "mission") {
+    startRepairMission();
+  } else if (repair.phase === "waiting" && repair.revisitAt <= Date.now()) {
+    state = {
+      ...state,
+      repair: { ...state.repair, active: beginRepairRevisit(repair) }
+    };
+    saveState(state);
+    renderRepairLauncher();
+    startRepairMission();
+  } else if (repair.phase === "complete") {
+    dom.repairDialog.close();
+  }
+}
+
+function endRepair() {
+  const repair = repairSession();
+  if (!repair || !window.confirm("End this repair? Recorded card and production evidence will remain, and the field result will not change.")) return;
+  stopRepairTimer();
+  const ownsMission = state.mission.active?.missionId === repair.mission.id;
+  state = {
+    ...state,
+    repair: { ...state.repair, active: null },
+    mission: ownsMission ? { ...state.mission, active: null } : state.mission
+  };
+  saveState(state);
+  dom.repairDialog.close();
+  if (dom.missionDialog.open) dom.missionDialog.close();
+  renderCard();
+  showToast("Repair ended; evidence kept");
+}
+
 function logFieldOutcome(outcome) {
   const now = Date.now();
+  const repair = archiveCompletedRepair(state.repair);
   state = {
     ...state,
     updatedAt: now,
+    repair,
     field: recordFieldOutcome(state.field, {
       scenarioId: dom.fieldScenario.value,
       outcome,
@@ -1460,7 +1757,9 @@ function logFieldOutcome(outcome) {
 }
 
 function renderCard() {
-  currentItem = currentSessionCard(guidedSession(), items) ?? selectNextItem(items, tree, state);
+  currentItem = currentRepairCard(repairSession(), items)
+    ?? currentSessionCard(guidedSession(), items)
+    ?? selectNextItem(items, tree, state);
   if (!currentItem) {
     throw new Error("No practice item is available. Check the skill DAG and content pack.");
   }
@@ -1476,7 +1775,8 @@ function renderCard() {
     meaning: "Japanese → meaning",
     reply: "Staff → reply",
     focus: "Word zoom",
-    reading: "Kanji → reading"
+    reading: "Kanji → reading",
+    "repair-recognition": "Field prompt → meaning"
   }[currentItem.mode] ?? "Recognition";
   dom.purpose.textContent = currentItem.scenarioPurpose;
   dom.prompt.lang = "ja";
@@ -1498,6 +1798,7 @@ function renderCard() {
   renderProgress();
   renderRoute();
   renderFieldSummary();
+  renderRepairLauncher();
   renderFocus();
   renderMissionSummary();
   renderSessionLauncher();
@@ -1545,9 +1846,25 @@ function sessionIsValid(session) {
   return Boolean(missionById(missionPack, session.missionId));
 }
 
+function repairIsValid(repair) {
+  if (!repair) return true;
+  if (!new Set(["cards", "mission", "waiting", "complete"]).has(repair.phase)) return false;
+  if (!new Set(["initial", "revisit"]).has(repair.round)) return false;
+  if (!Array.isArray(repair.cardIds) || !Array.isArray(repair.outcomes)) return false;
+  if (repair.outcomes.length > repair.cardIds.length) return false;
+  if (!repair.recognitionCard || repair.cardIds[0] !== repair.recognitionCard.id) return false;
+  if (!repair.cardIds.slice(1).every((id) => items.some((item) => item.id === id))) return false;
+  return repair.mission?.steps?.length === 2
+    && repair.mission.steps.at(-1)?.targetSkillId === "abort.wakarimasen";
+}
+
 function repairActivityState() {
   let repaired = false;
-  if (state.mission.active && !missionById(missionPack, state.mission.active.missionId)) {
+  if (!repairIsValid(state.repair?.active)) {
+    state = { ...state, repair: { ...state.repair, active: null } };
+    repaired = true;
+  }
+  if (state.mission.active && !missionForId(state.mission.active.missionId)) {
     state = { ...state, mission: { ...state.mission, active: null } };
     repaired = true;
   }
@@ -1580,6 +1897,9 @@ function bindEvents() {
   dom.sessionContinue.addEventListener("click", continueGuidedSession);
   dom.sessionEnd.addEventListener("click", endGuidedSession);
   dom.sessionAgain.addEventListener("click", startGuidedSession);
+  dom.repairOpen.addEventListener("click", openRepairDialog);
+  dom.repairAction.addEventListener("click", continueRepair);
+  dom.repairEnd.addEventListener("click", endRepair);
   dom.missionOpen.addEventListener("click", openMissionDialog);
   dom.missionSelect.addEventListener("change", renderMissionLobby);
   dom.missionMode.addEventListener("change", renderMissionLobby);
@@ -1595,15 +1915,28 @@ function bindEvents() {
   });
   dom.missionAdvance.addEventListener("click", () => {
     const active = state.mission.active;
-    const mission = missionById(missionPack, active?.missionId);
+    const mission = missionForId(active?.missionId);
     if (!active || !mission || !active.awaitingAdvance) return;
     const run = advanceMissionRun(active, mission);
     if (run.completed) {
       stopMissionTimer();
-      state = { ...state, mission: recordMissionCompletion(state.mission, run) };
+      const repair = repairSession();
       const session = guidedSession();
+      const completedRepair = repair?.phase === "mission" && repair.mission.id === run.missionId;
       const completedGuided = session?.phase === "mission" && session.missionId === run.missionId;
-      if (completedGuided) {
+      if (completedRepair) {
+        state = {
+          ...state,
+          mission: { ...state.mission, active: null },
+          repair: {
+            ...state.repair,
+            active: completeRepairRound(repair, run, run.completedAt)
+          }
+        };
+      } else {
+        state = { ...state, mission: recordMissionCompletion(state.mission, run) };
+      }
+      if (completedGuided && !completedRepair) {
         state = {
           ...state,
           session: {
@@ -1614,7 +1947,11 @@ function bindEvents() {
       }
       saveState(state);
       renderCard();
-      if (completedGuided) {
+      if (completedRepair) {
+        dom.missionDialog.close();
+        renderRepairDialog();
+        dom.repairDialog.showModal();
+      } else if (completedGuided) {
         dom.missionDialog.close();
         renderSessionDialog();
         dom.sessionDialog.showModal();
@@ -1629,11 +1966,17 @@ function bindEvents() {
   dom.missionEnd.addEventListener("click", () => {
     if (!window.confirm("End this mission? Recognition, reading, and production evidence already recorded will remain.")) return;
     stopMissionTimer();
+    const repairMission = repairSession()?.mission.id === state.mission.active?.missionId;
     state = { ...state, mission: { ...state.mission, active: null } };
     saveState(state);
     completedMissionRun = null;
     renderMissionSummary();
-    renderMissionLobby();
+    if (repairMission) {
+      dom.missionDialog.close();
+      openRepairDialog();
+    } else {
+      renderMissionLobby();
+    }
   });
   dom.missionPracticeWeakest.addEventListener("click", () => {
     const skillId = completedMissionWeakestSkillId
@@ -1686,7 +2029,9 @@ function bindEvents() {
   dom.reveal.addEventListener("click", recordUnsure);
   dom.furiganaHelp.addEventListener("click", showRetiredFurigana);
   dom.nextCard.addEventListener("click", () => {
-    if (guidedSession()?.phase === "mission") continueGuidedSession();
+    if (repairSession()?.phase === "mission") startRepairMission();
+    else if (repairSession()?.phase === "cards") renderCard();
+    else if (guidedSession()?.phase === "mission") continueGuidedSession();
     else renderCard();
   });
   dom.progressExport.addEventListener("click", downloadProgress);
@@ -1713,13 +2058,17 @@ function bindEvents() {
     saveState(state);
     renderCard();
   });
-  dom.fieldScenario.addEventListener("change", () => renderFieldSummary());
+  dom.fieldScenario.addEventListener("change", () => {
+    renderFieldSummary();
+    renderRepairLauncher();
+  });
   document.querySelectorAll("[data-field-outcome]").forEach((button) => {
     button.addEventListener("click", () => logFieldOutcome(button.dataset.fieldOutcome));
   });
   dom.reset.addEventListener("click", () => {
     if (!window.confirm("Reset all Kaiwa practice progress on this device?")) return;
     clearState();
+    stopRepairTimer();
     state = createInitialState(tree);
     saveState(state);
     renderCard();
