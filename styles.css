@@ -228,6 +228,24 @@ textarea { display: block; width: 100%; resize: vertical; border: 1px solid #aaa
 .roleplay-guidance { color: #7a480e !important; font-weight: 750; }
 .observation-actions { display: flex; align-items: center; gap: 1rem; }
 
+.share-card {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--card);
+  box-shadow: 0 1rem 2.5rem rgba(52, 60, 51, 0.09);
+  padding: 1.1rem;
+  text-align: center;
+}
+.share-card .eyebrow { margin-bottom: 0.4rem; }
+.share-card h2 { margin: 0; font-size: 1.2rem; }
+.share-hint { margin: 0.35rem 0 0.8rem; color: var(--muted); font-size: 0.82rem; }
+.share-qr-link { display: block; width: max-content; max-width: 100%; margin: 0 auto; border-radius: 0.65rem; background: white; padding: 0.8rem; line-height: 0; }
+.share-qr-link:focus-visible { outline: 0.2rem solid var(--amber); outline-offset: 0.15rem; }
+.share-qr { display: block; width: min(13rem, 100%); height: auto; }
+.share-url { margin: 0.6rem 0 0; font-size: 0.78rem; }
+.share-url a { color: var(--green-dark); overflow-wrap: anywhere; }
+
 footer { padding: 1rem 0; text-align: center; }
 .toast { position: fixed; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 10; translate: -50% 1rem; border-radius: 999px; background: var(--ink); color: white; padding: 0.65rem 0.9rem; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: 160ms ease; }
 .toast.visible { opacity: 1; translate: -50% 0; }

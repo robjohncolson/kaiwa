@@ -12,6 +12,8 @@ npm start
 
 Open `http://127.0.0.1:4173`. No install, build, API key, or network is needed for cards. Run checks with `npm test`. On a trusted LAN, use `KAIWA_HOST=0.0.0.0 npm start`, then open `http://LAPTOP_IP:4173` on the phone. Install from either HTTPS deployment for a service-worker-backed offline copy.
 
+The share card at the bottom of the app contains an offline-cached QR code for the Vercel URL.
+
 ## State and content
 
 Progress stays in this browser's `localStorage` at `kaiwa.practice-state.v1`. State schema v2 stores per-skill `pKnown`, fixed `pLearn/pGuess/pSlip`, correct/missed counts, source counts, a 2m → 10m → 30m → 2h cram step, and an inactive `longDue`. Old state migrates automatically. New or weak words show furigana on phrase cards. Reading cards hide it. At 75% reading BKT the ruby retires; requesting it again records a reading miss and restores the aid. Phrase success never inflates the readings inside it.

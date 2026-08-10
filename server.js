@@ -30,6 +30,7 @@ const ROOT_FILES = new Set([
   "icon.svg",
   "index.html",
   "manifest.webmanifest",
+  "qr-kaiwa.svg",
   "service-worker.js",
   "styles.css"
 ]);

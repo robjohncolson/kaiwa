@@ -19,14 +19,18 @@ async function withServer(options, callback) {
 
 test("local server keeps the offline app available without provider settings", async () => {
   await withServer({ env: {} }, async (baseUrl) => {
-    const [page, config, privateFile] = await Promise.all([
+    const [page, qr, config, privateFile] = await Promise.all([
       fetch(`${baseUrl}/`),
+      fetch(`${baseUrl}/qr-kaiwa.svg`),
       fetch(`${baseUrl}/api/config`),
       fetch(`${baseUrl}/server.js`)
     ]);
 
     assert.equal(page.status, 200);
     assert.match(await page.text(), /Kaiwa — trip drill/);
+    assert.equal(qr.status, 200);
+    assert.match(qr.headers.get("content-type"), /^image\/svg\+xml/);
+    assert.match(await qr.text(), /kaiwa-nine\.vercel\.app/);
     assert.deepEqual(await config.json(), {
       available: false,
       reason: "Provider environment variables are not set."
