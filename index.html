@@ -48,6 +48,22 @@
           </div>
         </details>
 
+        <details class="field-panel">
+          <summary>After a real conversation</summary>
+          <p class="field-help">Log what actually happened. This changes practice priority, never BKT mastery.</p>
+          <label class="field-picker">
+            Scenario
+            <select id="field-scenario"></select>
+          </label>
+          <div class="field-outcomes" aria-label="Real conversation result">
+            <button type="button" data-field-outcome="worked">Worked</button>
+            <button type="button" data-field-outcome="phone_sheet">Used phone sheet</button>
+            <button type="button" data-field-outcome="aborted">Aborted safely</button>
+            <button type="button" data-field-outcome="failed">Failed</button>
+          </div>
+          <p id="field-summary" class="field-summary"></p>
+        </details>
+
         <div class="progress-row">
           <p id="progress" class="progress"></p>
           <button id="map-open" type="button" class="map-button">Skill map</button>
@@ -60,7 +76,7 @@
         <section class="session-launcher" aria-labelledby="session-launch-title">
           <div>
             <p class="eyebrow">FIVE-MINUTE TRIP SESSION</p>
-            <h2 id="session-launch-title">Practice, read, then run the exchange.</h2>
+            <h2 id="session-launch-title">Recognize, read, then speak the exchange.</h2>
             <p id="session-summary" class="session-summary"></p>
           </div>
           <button id="session-open" type="button" class="session-open-button">Start session</button>
@@ -226,7 +242,7 @@
       </div>
 
       <section id="session-setup" class="session-setup">
-        <p>Six scheduler-selected cards: three weak phrases, three difficult readings without furigana, then one complete offline mission.</p>
+        <p>Six scheduler-selected cards: three weak recognition prompts, three difficult readings without furigana, then one speak-first offline mission.</p>
         <p id="session-plan" class="session-plan"></p>
         <button id="session-start" type="button" class="reveal-button">Start five-minute session</button>
       </section>
@@ -236,7 +252,7 @@
         <ol class="session-stages">
           <li id="session-stage-phrases">Three weak phrases</li>
           <li id="session-stage-readings">Three no-furigana readings</li>
-          <li id="session-stage-mission">One closed-loop mission</li>
+          <li id="session-stage-mission">One speak-first mission</li>
         </ol>
         <button id="session-continue" type="button" class="reveal-button">Continue session</button>
         <button id="session-end" type="button" class="text-button session-end">End session; keep recorded progress</button>
@@ -266,6 +282,13 @@
           Mission
           <select id="mission-select"></select>
         </label>
+        <label class="mission-picker mission-mode-picker">
+          Practice mode
+          <select id="mission-mode">
+            <option value="production">Speak first</option>
+            <option value="recognition">Choose the response</option>
+          </select>
+        </label>
         <p id="mission-purpose" class="mission-purpose"></p>
         <p id="mission-history" class="mission-history"></p>
         <label class="mission-challenge">
@@ -285,11 +308,18 @@
         <p id="mission-furigana-status" class="furigana-status"></p>
         <p id="mission-prompt-meaning" class="mission-prompt-meaning" hidden></p>
         <button id="mission-hint" type="button" class="text-button mission-hint">Need help — show meaning</button>
+        <p id="mission-timer" class="mission-timer" hidden></p>
+        <button id="mission-production-reveal" type="button" class="production-reveal" hidden>I answered aloud — reveal fixed line</button>
         <div id="mission-options" class="mission-options"></div>
         <section id="mission-feedback" class="mission-feedback" hidden>
           <p id="mission-feedback-title" class="mission-feedback-title"></p>
           <p id="mission-correct-line" class="mission-correct-line" lang="ja"></p>
           <p id="mission-correct-meaning" class="mission-correct-meaning"></p>
+          <div id="mission-production-grades" class="production-grades" hidden>
+            <button type="button" data-production-grade="miss">Miss</button>
+            <button type="button" data-production-grade="help">Needed help</button>
+            <button type="button" data-production-grade="clean">Said cleanly</button>
+          </div>
           <button id="mission-advance" type="button" class="reveal-button">Continue mission</button>
         </section>
         <button id="mission-end" type="button" class="text-button mission-end">End run; keep recorded evidence</button>

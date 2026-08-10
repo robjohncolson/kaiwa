@@ -6,9 +6,11 @@ import {
   advanceMissionRun,
   answerMissionStep,
   createMissionRun,
+  gradeProductionStep,
   missionById,
   missionLineIndex,
   recordMissionCompletion,
+  revealProductionAnswer,
   revealMissionHint,
   validateMissionPack
 } from "../src/mission.js";
@@ -39,6 +41,18 @@ function finishMission(mission, { hintAt = -1, wrongAt = -1, hideFurigana = fals
       : step.targetSkillId;
     run = answerMissionStep(run, mission, selected, NOW + index * 1000 + 400);
     run = advanceMissionRun(run, mission, NOW + index * 1000 + 500);
+  }
+  return run;
+}
+
+function finishProductionMission(mission, { gradeAt = -1, grade = "miss", slowAbort = false } = {}) {
+  let run = createMissionRun(mission, NOW, { mode: "production" });
+  for (const [index] of mission.steps.entries()) {
+    const responseMs = slowAbort && index === mission.steps.length - 1 ? 5_100 : 1_000;
+    const revealAt = run.stepStartedAt + responseMs;
+    run = revealProductionAnswer(run, revealAt);
+    run = gradeProductionStep(run, mission, index === gradeAt ? grade : "clean", revealAt + 50);
+    run = advanceMissionRun(run, mission, revealAt + 100);
   }
   return run;
 }
@@ -114,4 +128,39 @@ test("mission observations update only the demonstrated target skill", async () 
   assert.equal(updated.skills[observation.skillId].attempts, 1);
   assert.deepEqual(updated.skills[observation.skillId].observations.mission, { correct: 1, incorrect: 0 });
   assert.equal(updated.skills["shimamura.stock_check"].attempts, 0);
+});
+
+test("a speak-first run hides choices, self-grades, and records mode metrics", async () => {
+  const { pack } = await fixtures();
+  const mission = missionById(pack, "shimamura-loop");
+  let run = createMissionRun(mission, NOW, { mode: "production" });
+
+  assert.throws(() => answerMissionStep(run, mission, mission.steps[0].targetSkillId), /do not accept/);
+  run = revealProductionAnswer(run, NOW + 900);
+  run = gradeProductionStep(run, mission, "clean", NOW + 1_000);
+  assert.equal(run.observations[0].grade, "clean");
+  assert.equal(run.observations[0].responseMs, 900);
+
+  const completed = finishProductionMission(mission);
+  const stats = recordMissionCompletion({ active: completed, stats: {} }, completed).stats[mission.id];
+  assert.equal(completed.outcome, "clean");
+  assert.equal(stats.productionRuns, 1);
+  assert.equal(stats.recognitionRuns, 0);
+  assert.equal(stats.recent[0].mode, "production");
+});
+
+test("production help cannot be called clean and a slow abort only recovers", async () => {
+  const { pack } = await fixtures();
+  const mission = missionById(pack, "family-dinner-loop");
+  let run = createMissionRun(mission, NOW, { mode: "production" });
+  run = revealMissionHint(run);
+  run = revealProductionAnswer(run, NOW + 1_000);
+  run = gradeProductionStep(run, mission, "clean", NOW + 1_100);
+  assert.equal(run.observations[0].grade, "help");
+
+  assert.equal(finishProductionMission(mission, { slowAbort: true }).outcome, "recovered");
+  assert.equal(finishProductionMission(mission, {
+    gradeAt: mission.steps.length - 1,
+    grade: "miss"
+  }).outcome, "failed");
 });

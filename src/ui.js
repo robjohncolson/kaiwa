@@ -4,12 +4,16 @@ import {
   advanceMissionRun,
   answerMissionStep,
   createMissionRun,
+  gradeProductionStep,
   missionById,
   missionLineIndex,
   recordMissionCompletion,
+  revealProductionAnswer,
   revealMissionHint,
   validateMissionPack
 } from "./mission.js";
+import { fieldCounts, latestFieldOutcome, recordFieldOutcome } from "./field.js";
+import { ABORT_TARGET_MS, applyProductionObservation, productionIsReady } from "./production.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
@@ -79,6 +83,7 @@ const dom = {
   missionSelect: document.querySelector("#mission-select"),
   missionPurpose: document.querySelector("#mission-purpose"),
   missionHistory: document.querySelector("#mission-history"),
+  missionMode: document.querySelector("#mission-mode"),
   missionChallenge: document.querySelector("#mission-challenge"),
   missionStart: document.querySelector("#mission-start"),
   missionRun: document.querySelector("#mission-run"),
@@ -89,11 +94,14 @@ const dom = {
   missionFuriganaStatus: document.querySelector("#mission-furigana-status"),
   missionPromptMeaning: document.querySelector("#mission-prompt-meaning"),
   missionHint: document.querySelector("#mission-hint"),
+  missionTimer: document.querySelector("#mission-timer"),
+  missionProductionReveal: document.querySelector("#mission-production-reveal"),
   missionOptions: document.querySelector("#mission-options"),
   missionFeedback: document.querySelector("#mission-feedback"),
   missionFeedbackTitle: document.querySelector("#mission-feedback-title"),
   missionCorrectLine: document.querySelector("#mission-correct-line"),
   missionCorrectMeaning: document.querySelector("#mission-correct-meaning"),
+  missionProductionGrades: document.querySelector("#mission-production-grades"),
   missionAdvance: document.querySelector("#mission-advance"),
   missionEnd: document.querySelector("#mission-end"),
   missionComplete: document.querySelector("#mission-complete"),
@@ -118,6 +126,8 @@ const dom = {
   routeApply: document.querySelector("#route-apply"),
   routeClear: document.querySelector("#route-clear"),
   routeSummary: document.querySelector("#route-summary"),
+  fieldScenario: document.querySelector("#field-scenario"),
+  fieldSummary: document.querySelector("#field-summary"),
   scenario: document.querySelector("#scenario"),
   mode: document.querySelector("#mode"),
   purpose: document.querySelector("#purpose"),
@@ -175,6 +185,7 @@ let forcedFurigana = new Set();
 let selectedMapSkillId = null;
 let completedMissionRun = null;
 let completedMissionWeakestSkillId = null;
+let missionTimerId = null;
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
@@ -438,6 +449,13 @@ function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
 }
 
+const fieldOutcomeLabels = {
+  worked: "Worked",
+  phone_sheet: "Used phone sheet",
+  aborted: "Aborted safely",
+  failed: "Failed"
+};
+
 function guidedSession() {
   return state.session?.active ?? null;
 }
@@ -449,7 +467,7 @@ function guidedMission(session = guidedSession()) {
 function renderSessionLauncher() {
   const session = guidedSession();
   if (!session) {
-    dom.sessionSummary.textContent = "3 weak phrases · 3 no-furigana readings · 1 complete mission";
+    dom.sessionSummary.textContent = "3 recognition cards · 3 no-furigana readings · 1 speak-first mission";
     dom.sessionOpen.textContent = "Start session";
     return;
   }
@@ -459,7 +477,7 @@ function renderSessionLauncher() {
     return;
   }
   if (session.phase === "mission") {
-    dom.sessionSummary.textContent = `Cards complete · next: ${guidedMission(session)?.title ?? "closed-loop mission"}`;
+    dom.sessionSummary.textContent = `Cards complete · speak next: ${guidedMission(session)?.title ?? "closed-loop mission"}`;
     dom.sessionOpen.textContent = state.mission.active ? "Resume mission" : "Run mission";
     return;
   }
@@ -478,7 +496,7 @@ function renderSessionSetup() {
   dom.sessionSetup.hidden = false;
   dom.sessionActive.hidden = true;
   dom.sessionComplete.hidden = true;
-  dom.sessionPlan.textContent = `Kaiwa will finish with “${mission.title},” selected from your weak skills, route urgency, and mission history.`;
+  dom.sessionPlan.textContent = `Kaiwa will finish with a speak-first “${mission.title},” selected from weak skills, route urgency, mission history, and field results.`;
 }
 
 function renderSessionActive(session) {
@@ -491,7 +509,7 @@ function renderSessionActive(session) {
   dom.sessionActive.hidden = false;
   dom.sessionComplete.hidden = true;
   dom.sessionProgress.textContent = session.phase === "mission"
-    ? `All ${session.cardIds.length} cards complete. Finish “${guidedMission(session)?.title ?? "the selected mission"}.”`
+    ? `All ${session.cardIds.length} cards complete. Say the fixed lines in “${guidedMission(session)?.title ?? "the selected mission"}.”`
     : `Card ${session.outcomes.length + 1} of ${session.cardIds.length} · ${phraseDone} phrases and ${readingDone} readings complete`;
   setStageStatus(dom.sessionStagePhrases, phraseDone >= phraseTotal ? "done" : "current");
   setStageStatus(dom.sessionStageReadings, readingDone >= readingTotal
@@ -503,13 +521,12 @@ function renderSessionActive(session) {
     : "Continue cards";
 }
 
-function appendSessionResult(titleText, values, emptyText) {
+function appendSessionDetail(titleText, detailText) {
   const item = document.createElement("li");
   const title = document.createElement("strong");
   title.textContent = titleText;
   const detail = document.createElement("span");
-  if (values.length > 0) renderJapanese(detail, values.join(" · "), { alwaysShow: true });
-  else detail.textContent = emptyText;
+  detail.textContent = detailText;
   item.append(title, detail);
   dom.sessionResults.append(item);
 }
@@ -528,27 +545,32 @@ function renderSessionComplete(session) {
     : summary.missionOutcome === "recovered"
       ? "You recovered safely."
       : "The loop needs another run.";
-  dom.sessionCompleteMetrics.textContent = `${summary.correctCards}/${summary.cardsTotal} cards correct · ${duration} · all progress saved locally`;
+  dom.sessionCompleteMetrics.textContent = `${duration} · four evidence channels kept separate · all progress saved locally`;
   dom.sessionResults.replaceChildren();
-  appendSessionResult(
-    "Furigana retired this session",
-    summary.newlyRetiredReadings.map((item) => item.prompt),
-    "None yet. A reading needs BKT confidence and two consecutive unaided passes."
+  appendSessionDetail(
+    "Recognition",
+    `${summary.phraseCorrect}/${summary.phraseTotal} correct. ${summary.newlyReadyPhrases.length} phrase${summary.newlyReadyPhrases.length === 1 ? "" : "s"} crossed the BKT readiness gate.`
   );
-  appendSessionResult(
-    "Still needs furigana",
-    summary.needsFurigana.map((item) => item.prompt),
-    "All readings selected for this session passed the retirement gate."
+  const retired = summary.newlyRetiredReadings.map((item) => item.prompt).join(" · ");
+  const needs = summary.needsFurigana.map((item) => item.prompt).join(" · ");
+  appendSessionDetail(
+    "Reading",
+    `${summary.readingCorrect}/${summary.readingTotal} correct.${retired ? ` Furigana retired: ${retired}.` : " No new furigana retired."}${needs ? ` Still testing: ${needs}.` : ""}`
   );
-  appendSessionResult(
-    "Phrases newly ready",
-    summary.newlyReadyPhrases.map((item) => skillLabel(item.skillId)),
-    "No phrase crossed the ready threshold in this session."
+  const production = summary.production;
+  appendSessionDetail(
+    "Production",
+    production
+      ? `${production.clean}/${production.total} said cleanly. Abort response: ${(production.abortResponseMs / 1000).toFixed(1)}s (target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s). This did not change BKT.`
+      : "No speak-first evidence recorded in this session."
   );
-  appendSessionResult(
-    "Practice next",
-    summary.weakestPhrases.slice(0, 2).map((item) => skillLabel(item.skillId)),
-    "The selected phrases are ready; the scheduler will choose the next weak branch."
+  const mission = guidedMission(session);
+  const field = latestFieldOutcome(state.field, mission?.scenarioId);
+  appendSessionDetail(
+    "Real world",
+    field
+      ? `${fieldOutcomeLabels[field.outcome]} was last logged for this scenario. It influences priority, not mastery.`
+      : "Not logged yet. After the real conversation, record whether it worked, needed the phone sheet, ended with the abort, or failed."
   );
 }
 
@@ -597,7 +619,7 @@ function continueGuidedSession() {
   if (session.phase === "mission") {
     if (dom.sessionDialog.open) dom.sessionDialog.close();
     if (state.mission.active?.missionId === session.missionId) openMissionDialog();
-    else startMission(session.missionId, false);
+    else startMission(session.missionId, false, "production");
     return;
   }
   renderSessionDialog();
@@ -618,6 +640,8 @@ function statsForMission(missionId) {
     cleanRuns: 0,
     safeRecoveries: 0,
     failedRuns: 0,
+    recognitionRuns: 0,
+    productionRuns: 0,
     noFuriganaRuns: 0,
     hints: 0,
     totalResponseMs: 0,
@@ -630,8 +654,9 @@ function renderMissionSummary() {
   const totals = allStats.reduce((result, stats) => ({
     runs: result.runs + (stats.runs ?? 0),
     clean: result.clean + (stats.cleanRuns ?? 0),
+    production: result.production + (stats.productionRuns ?? 0),
     noFurigana: result.noFurigana + (stats.noFuriganaRuns ?? 0)
-  }), { runs: 0, clean: 0, noFurigana: 0 });
+  }), { runs: 0, clean: 0, production: 0, noFurigana: 0 });
   if (state.mission.active) {
     const active = missionById(missionPack, state.mission.active.missionId);
     dom.missionSummary.textContent = `Resume ${active?.title ?? "active mission"} · step ${state.mission.active.stepIndex + 1}`;
@@ -639,8 +664,8 @@ function renderMissionSummary() {
     return;
   }
   dom.missionSummary.textContent = totals.runs === 0
-    ? `${missionPack.missions.length} fixed missions · no network`
-    : `${totals.clean}/${totals.runs} clean · ${totals.noFurigana} without furigana`;
+    ? `${missionPack.missions.length} fixed missions · speak first or recognize · no network`
+    : `${totals.clean}/${totals.runs} clean · ${totals.production} speak-first · ${totals.noFurigana} without furigana`;
   dom.missionOpen.textContent = "Open missions";
 }
 
@@ -656,9 +681,12 @@ function renderMissionLobby() {
   dom.missionRun.hidden = true;
   dom.missionComplete.hidden = true;
   dom.missionPurpose.textContent = mission.purpose;
+  dom.missionStart.textContent = dom.missionMode.value === "production"
+    ? "Start speak-first mission"
+    : "Start recognition mission";
   dom.missionHistory.textContent = stats.runs === 0
     ? `${mission.steps.length} fixed turns. The final turn deliberately goes off script.`
-    : `${stats.cleanRuns}/${stats.runs} clean · ${stats.safeRecoveries} safe recoveries · ${stats.noFuriganaRuns} without furigana`;
+    : `${stats.cleanRuns}/${stats.runs} clean · ${stats.productionRuns ?? 0} speak-first · ${stats.safeRecoveries} safe recoveries · ${stats.noFuriganaRuns} without furigana`;
 }
 
 function saveMissionRun(run) {
@@ -677,21 +705,84 @@ function missionStepEntries(step) {
   return readingEntriesIn(`${step.prompt} ${choiceText}`, readings);
 }
 
+function stopMissionTimer() {
+  if (missionTimerId != null) window.clearInterval(missionTimerId);
+  missionTimerId = null;
+}
+
+function updateMissionTimer(run, step, now = Date.now()) {
+  if (run.mode !== "production" || run.productionRevealed || run.awaitingAdvance) {
+    dom.missionTimer.hidden = true;
+    return;
+  }
+  const elapsed = Math.max(0, now - run.stepStartedAt);
+  const isAbort = step.targetSkillId === "abort.wakarimasen";
+  dom.missionTimer.hidden = false;
+  dom.missionTimer.classList.toggle("late", isAbort && elapsed > ABORT_TARGET_MS);
+  dom.missionTimer.textContent = isAbort
+    ? `${(elapsed / 1000).toFixed(1)}s · abort target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s`
+    : `${(elapsed / 1000).toFixed(1)}s · say the line before revealing`;
+}
+
+function startMissionTimer(run, step) {
+  stopMissionTimer();
+  updateMissionTimer(run, step);
+  if (run.mode === "production" && !run.productionRevealed && !run.awaitingAdvance) {
+    missionTimerId = window.setInterval(() => updateMissionTimer(run, step), 100);
+  }
+}
+
 function renderMissionFeedback(run, mission, step) {
   const observation = run.observations.at(-1);
   const correctLine = missionLines.get(step.targetSkillId);
   dom.missionFeedback.hidden = false;
-  dom.missionFeedback.dataset.result = observation.answerCorrect ? "correct" : "incorrect";
-  dom.missionFeedbackTitle.textContent = observation.evidenceCorrect
-    ? "Correct — unaided mission evidence recorded."
-    : observation.answerCorrect
-      ? "Correct with help — BKT records this as a miss."
-      : "Not the fixed response — BKT records a miss.";
+  if (run.mode === "production") {
+    dom.missionFeedback.dataset.result = !run.awaitingAdvance
+      ? "pending"
+      : observation?.grade === "clean" ? "correct" : "incorrect";
+    dom.missionFeedbackTitle.textContent = !run.awaitingAdvance
+      ? `Compare with the fixed line · ${(run.productionResponseMs / 1000).toFixed(1)}s`
+      : observation.grade === "clean"
+        ? "Said cleanly — production evidence recorded. BKT unchanged."
+        : observation.grade === "help"
+          ? "Needed help — production evidence recorded. BKT unchanged."
+          : "Miss — production evidence recorded. BKT unchanged.";
+    dom.missionProductionGrades.hidden = run.awaitingAdvance;
+    dom.missionAdvance.hidden = !run.awaitingAdvance;
+  } else {
+    dom.missionFeedback.dataset.result = observation.answerCorrect ? "correct" : "incorrect";
+    dom.missionFeedbackTitle.textContent = observation.evidenceCorrect
+      ? "Correct — unaided mission evidence recorded."
+      : observation.answerCorrect
+        ? "Correct with help — BKT records this as a miss."
+        : "Not the fixed response — BKT records a miss.";
+    dom.missionProductionGrades.hidden = true;
+    dom.missionAdvance.hidden = false;
+  }
   renderJapanese(dom.missionCorrectLine, correctLine.ja, { alwaysShow: true });
   dom.missionCorrectMeaning.textContent = correctLine.meaning;
   dom.missionAdvance.textContent = run.stepIndex === mission.steps.length - 1
     ? "Finish mission"
     : "Continue mission";
+}
+
+function revealProductionStep() {
+  const active = state.mission.active;
+  if (!active || active.mode !== "production" || active.productionRevealed) return;
+  stopMissionTimer();
+  saveMissionRun(revealProductionAnswer(active));
+  renderMissionStep();
+}
+
+function gradeProductionChoice(grade) {
+  const active = state.mission.active;
+  const mission = missionById(missionPack, active?.missionId);
+  if (!active || !mission || active.mode !== "production" || active.awaitingAdvance) return;
+  const run = gradeProductionStep(active, mission, grade);
+  state = applyProductionObservation(state, run.observations.at(-1));
+  saveMissionRun(run);
+  renderCard();
+  renderMissionStep();
 }
 
 function answerMissionChoice(selectedSkillId) {
@@ -733,59 +824,83 @@ function renderMissionStep() {
   dom.missionProgress.textContent = `Turn ${run.stepIndex + 1} of ${mission.steps.length}`;
   dom.missionKind.textContent = step.kind === "off_script" ? "Off script" : "Partner";
   dom.missionKind.classList.toggle("mission-off-script", step.kind === "off_script");
-  dom.missionInstruction.textContent = step.kind === "off_script"
-    ? "The exchange opened up. Use the pre-decided recovery; do not improvise."
-    : "Choose your fixed response to the partner's Japanese.";
+  dom.missionInstruction.textContent = run.mode === "production"
+    ? step.kind === "off_script"
+      ? "The exchange opened up. Say the abort aloud now; target five seconds."
+      : "Say your fixed response aloud before revealing it. No microphone is listening."
+    : step.kind === "off_script"
+      ? "The exchange opened up. Use the pre-decided recovery; do not improvise."
+      : "Choose your fixed response to the partner's Japanese.";
   renderJapanese(dom.missionPrompt, step.prompt, { neverShow: run.hideFurigana });
   const readingEntries = missionStepEntries(step);
   const shownReadings = run.hideFurigana
     ? 0
     : readingEntries.filter((entry) => showReadingFor(entry)).length;
   dom.missionFuriganaStatus.textContent = run.hideFurigana
-    ? "Challenge run · furigana and choice meanings hidden"
+    ? `Challenge run · furigana${run.mode === "recognition" ? " and choice meanings" : ""} hidden`
     : readingEntries.length === 0
       ? "This turn uses kana only"
       : `${shownReadings} supported · ${readingEntries.length - shownReadings} retired by reading checks`;
   dom.missionPromptMeaning.textContent = step.meaning;
   dom.missionPromptMeaning.hidden = !run.currentHintUsed && !run.awaitingAdvance;
-  dom.missionHint.hidden = run.awaitingAdvance;
+  dom.missionHint.hidden = run.awaitingAdvance || run.productionRevealed;
   dom.missionHint.disabled = run.currentHintUsed;
   dom.missionHint.textContent = run.currentHintUsed ? "Meaning shown — help recorded" : "Need help — show meaning";
   dom.missionFeedback.hidden = true;
+  dom.missionProductionGrades.hidden = true;
+  dom.missionAdvance.hidden = false;
+  dom.missionProductionReveal.hidden = run.mode !== "production" || run.productionRevealed || run.awaitingAdvance;
   dom.missionOptions.replaceChildren();
 
   const observation = run.awaitingAdvance ? run.observations.at(-1) : null;
-  for (const skillId of step.choiceSkillIds) {
-    const line = missionLines.get(skillId);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "mission-option";
-    button.disabled = run.awaitingAdvance;
-    button.dataset.skillId = skillId;
-    button.dataset.correct = String(skillId === step.targetSkillId);
-    const japanese = document.createElement("span");
-    japanese.className = "mission-option-japanese";
-    japanese.lang = "ja";
-    renderJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
-    button.append(japanese);
-    if (!run.hideFurigana) {
-      const meaning = document.createElement("span");
-      meaning.className = "mission-option-meaning";
-      meaning.textContent = line.meaning;
-      button.append(meaning);
+  if (run.mode === "recognition") {
+    for (const skillId of step.choiceSkillIds) {
+      const line = missionLines.get(skillId);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mission-option";
+      button.disabled = run.awaitingAdvance;
+      button.dataset.skillId = skillId;
+      button.dataset.correct = String(skillId === step.targetSkillId);
+      const japanese = document.createElement("span");
+      japanese.className = "mission-option-japanese";
+      japanese.lang = "ja";
+      renderJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
+      button.append(japanese);
+      if (!run.hideFurigana) {
+        const meaning = document.createElement("span");
+        meaning.className = "mission-option-meaning";
+        meaning.textContent = line.meaning;
+        button.append(meaning);
+      }
+      if (observation) {
+        if (skillId === step.targetSkillId) button.classList.add("correct");
+        if (skillId === observation.selectedSkillId && !observation.answerCorrect) button.classList.add("incorrect");
+      }
+      button.addEventListener("click", () => answerMissionChoice(skillId));
+      dom.missionOptions.append(button);
     }
-    if (observation) {
-      if (skillId === step.targetSkillId) button.classList.add("correct");
-      if (skillId === observation.selectedSkillId && !observation.answerCorrect) button.classList.add("incorrect");
-    }
-    button.addEventListener("click", () => answerMissionChoice(skillId));
-    dom.missionOptions.append(button);
   }
-  if (run.awaitingAdvance) renderMissionFeedback(run, mission, step);
+  if (run.awaitingAdvance || (run.mode === "production" && run.productionRevealed)) {
+    renderMissionFeedback(run, mission, step);
+  }
+  startMissionTimer(run, step);
 }
 
 function weakestMissionSkill(run) {
   const skillIds = [...new Set(run.observations.map((observation) => observation.skillId))];
+  if (run.mode === "production") {
+    const gradeRank = { miss: 0, help: 1, clean: 2 };
+    return skillIds.sort((a, b) => {
+      const aObservation = run.observations.findLast((entry) => entry.skillId === a);
+      const bObservation = run.observations.findLast((entry) => entry.skillId === b);
+      const resultDifference = gradeRank[aObservation?.grade] - gradeRank[bObservation?.grade];
+      if (resultDifference) return resultDifference;
+      const readyDifference = Number(productionIsReady(state.skills[a])) - Number(productionIsReady(state.skills[b]));
+      return readyDifference
+        || (state.skills[a].production?.streak ?? 0) - (state.skills[b].production?.streak ?? 0);
+    })[0] ?? null;
+  }
   return skillIds.sort((a, b) => {
     const readyDifference = Number(skillIsReady(tree, state.skills[a])) - Number(skillIsReady(tree, state.skills[b]));
     return readyDifference || probabilityKnown(state.skills[a]) - probabilityKnown(state.skills[b]);
@@ -805,17 +920,25 @@ function renderMissionComplete(run) {
   dom.missionOutcome.dataset.outcome = run.outcome;
   dom.missionOutcome.textContent = run.outcome;
   const wording = {
-    clean: ["Closed loop complete.", "Every fixed response—including the abort—was correct without help."],
-    recovered: ["Recovered safely.", "There was a miss or hint, but you used the abort when the exchange opened up."],
-    failed: ["Loop needs another run.", "The final off-script turn was not recovered with the abort line."]
+    clean: ["Closed loop complete.", run.mode === "production"
+      ? "Every fixed line was said cleanly, and the abort came within five seconds."
+      : "Every fixed response—including the abort—was correct without help."],
+    recovered: ["Recovered safely.", run.mode === "production"
+      ? "The abort was available, but one line needed help or the abort took longer than five seconds."
+      : "There was a miss or hint, but you used the abort when the exchange opened up."],
+    failed: ["Loop needs another run.", "The final off-script turn was not recovered cleanly with the abort line."]
   }[run.outcome];
   dom.missionCompleteTitle.textContent = wording[0];
   dom.missionCompleteSummary.textContent = wording[1];
   dom.missionSkillResults.replaceChildren();
   const results = new Map();
   for (const observation of run.observations) {
-    const current = results.get(observation.skillId) ?? { correct: 0, missed: 0 };
-    current[observation.evidenceCorrect ? "correct" : "missed"] += 1;
+    const current = results.get(observation.skillId) ?? { correct: 0, helped: 0, missed: 0 };
+    if (run.mode === "production") {
+      current[observation.grade === "clean" ? "correct" : observation.grade === "help" ? "helped" : "missed"] += 1;
+    } else {
+      current[observation.evidenceCorrect ? "correct" : "missed"] += 1;
+    }
     results.set(observation.skillId, current);
   }
   for (const [skillId, result] of results) {
@@ -825,21 +948,31 @@ function renderMissionComplete(run) {
     renderJapanese(label, skillLabel(skillId));
     const meta = document.createElement("span");
     meta.className = "mission-skill-result-meta";
-    meta.textContent = `${Math.round(probabilityKnown(state.skills[skillId]) * 100)}% BKT · ${result.correct} hit / ${result.missed} miss`;
+    if (run.mode === "production") {
+      const production = state.skills[skillId].production;
+      meta.textContent = `${productionIsReady(state.skills[skillId]) ? "production ready" : `production streak ${production.streak}/2`} · ${result.correct} clean / ${result.helped} help / ${result.missed} miss`;
+    } else {
+      meta.textContent = `${Math.round(probabilityKnown(state.skills[skillId]) * 100)}% BKT · ${result.correct} hit / ${result.missed} miss`;
+    }
     item.append(label, meta);
     dom.missionSkillResults.append(item);
   }
-  dom.missionCompleteMetrics.textContent = `${(responseMs / 1000).toFixed(1)}s response time · ${run.hints} hints · ${stats.cleanRuns}/${stats.runs} clean overall${run.hideFurigana ? " · challenge run" : ""}`;
+  dom.missionCompleteMetrics.textContent = `${(responseMs / 1000).toFixed(1)}s response time · ${run.hints} hints · ${stats.cleanRuns}/${stats.runs} clean overall · ${run.mode === "production" ? "production only; BKT unchanged" : "recognition BKT recorded"}${run.hideFurigana ? " · challenge run" : ""}`;
   dom.missionPracticeWeakest.disabled = !completedMissionWeakestSkillId;
 }
 
-function startMission(missionId = dom.missionSelect.value, hideFurigana = dom.missionChallenge.checked) {
+function startMission(
+  missionId = dom.missionSelect.value,
+  hideFurigana = dom.missionChallenge.checked,
+  mode = dom.missionMode.value
+) {
   const mission = missionById(missionPack, missionId);
   if (!mission) return;
   completedMissionRun = null;
   completedMissionWeakestSkillId = null;
   dom.missionSelect.value = mission.id;
-  saveMissionRun(createMissionRun(mission, Date.now(), { hideFurigana }));
+  dom.missionMode.value = mode;
+  saveMissionRun(createMissionRun(mission, Date.now(), { hideFurigana, mode }));
   renderMissionStep();
   if (!dom.missionDialog.open) dom.missionDialog.showModal();
 }
@@ -918,7 +1051,13 @@ function renderMapDetail(model, skillId) {
   const knownChip = document.createElement("span");
   knownChip.className = "map-status-chip";
   knownChip.textContent = `${node.knownPercent}% BKT · ${state.skills[skillId].correct}/${tree.readyMinCorrect ?? 2} confirmations`;
-  status.append(statusChip, knownChip);
+  const productionChip = document.createElement("span");
+  const production = state.skills[skillId].production;
+  productionChip.className = "map-status-chip";
+  productionChip.textContent = production.attempts > 0
+    ? `${production.streak}/2 spoken clean${productionIsReady(state.skills[skillId]) ? " · ready" : ""}`
+    : "spoken · untested";
+  status.append(statusChip, knownChip, productionChip);
   dom.mapDetail.append(title, status);
 
   const item = items.find((candidate) => candidate.skillId === skillId && candidate.mode !== "reading")
@@ -1269,7 +1408,7 @@ function renderProgress() {
   const phraseIds = tree.nodes.map((node) => node.id).filter((id) => !readingSkillIds.has(id));
   const readingSeen = readingIds.filter((id) => state.skills[id]?.attempts > 0).length;
   const phraseSeen = phraseIds.filter((id) => state.skills[id]?.attempts > 0).length;
-  dom.progress.textContent = `${state.totalReviews} ${reviewLabel} · phrases ${phraseSeen}/${phraseIds.length} · readings ${readingSeen}/${readingIds.length} · saved here`;
+  dom.progress.textContent = `${state.totalReviews} ${reviewLabel} · ${state.totalProduction ?? 0} spoken turns · phrases ${phraseSeen}/${phraseIds.length} · readings ${readingSeen}/${readingIds.length} · saved here`;
 }
 
 function renderRoute() {
@@ -1286,6 +1425,38 @@ function renderRoute() {
     : `${routeScenario.title} event time passed — boost is inactive.`;
   dom.routeClear.hidden = false;
   dom.routeScenario.value = routeScenario.id;
+}
+
+function renderFieldSummary(preferredScenarioId = null) {
+  const scenarioId = preferredScenarioId
+    ?? dom.fieldScenario.value
+    ?? currentItem?.scenarioId;
+  if (scenarioById(scenarioId)) dom.fieldScenario.value = scenarioId;
+  const latest = latestFieldOutcome(state.field, dom.fieldScenario.value);
+  const counts = fieldCounts(state.field, dom.fieldScenario.value);
+  if (!latest) {
+    dom.fieldSummary.textContent = "Nothing logged for this scenario yet.";
+    return;
+  }
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  dom.fieldSummary.textContent = `Latest: ${fieldOutcomeLabels[latest.outcome]} · ${total} field ${total === 1 ? "result" : "results"} · practice priority adjusted locally`;
+}
+
+function logFieldOutcome(outcome) {
+  const now = Date.now();
+  state = {
+    ...state,
+    updatedAt: now,
+    field: recordFieldOutcome(state.field, {
+      scenarioId: dom.fieldScenario.value,
+      outcome,
+      at: now
+    })
+  };
+  saveState(state);
+  renderCard();
+  renderFieldSummary(dom.fieldScenario.value);
+  showToast(`${fieldOutcomeLabels[outcome]} logged; BKT unchanged`);
 }
 
 function renderCard() {
@@ -1326,6 +1497,7 @@ function renderCard() {
   renderEvidence();
   renderProgress();
   renderRoute();
+  renderFieldSummary();
   renderFocus();
   renderMissionSummary();
   renderSessionLauncher();
@@ -1333,10 +1505,12 @@ function renderCard() {
 
 function populateRouteScenarios() {
   for (const scenario of content.scenarios.filter((entry) => entry.id !== "essentials")) {
-    const option = document.createElement("option");
-    option.value = scenario.id;
-    option.textContent = scenario.title;
-    dom.routeScenario.append(option);
+    for (const select of [dom.routeScenario, dom.fieldScenario]) {
+      const option = document.createElement("option");
+      option.value = scenario.id;
+      option.textContent = scenario.title;
+      select.append(option);
+    }
   }
 }
 
@@ -1408,7 +1582,12 @@ function bindEvents() {
   dom.sessionAgain.addEventListener("click", startGuidedSession);
   dom.missionOpen.addEventListener("click", openMissionDialog);
   dom.missionSelect.addEventListener("change", renderMissionLobby);
+  dom.missionMode.addEventListener("change", renderMissionLobby);
   dom.missionStart.addEventListener("click", () => startMission());
+  dom.missionProductionReveal.addEventListener("click", revealProductionStep);
+  dom.missionProductionGrades.querySelectorAll("[data-production-grade]").forEach((button) => {
+    button.addEventListener("click", () => gradeProductionChoice(button.dataset.productionGrade));
+  });
   dom.missionHint.addEventListener("click", () => {
     const run = revealMissionHint(state.mission.active);
     saveMissionRun(run);
@@ -1420,6 +1599,7 @@ function bindEvents() {
     if (!active || !mission || !active.awaitingAdvance) return;
     const run = advanceMissionRun(active, mission);
     if (run.completed) {
+      stopMissionTimer();
       state = { ...state, mission: recordMissionCompletion(state.mission, run) };
       const session = guidedSession();
       const completedGuided = session?.phase === "mission" && session.missionId === run.missionId;
@@ -1447,7 +1627,8 @@ function bindEvents() {
     renderMissionStep();
   });
   dom.missionEnd.addEventListener("click", () => {
-    if (!window.confirm("End this mission? BKT evidence already recorded will remain.")) return;
+    if (!window.confirm("End this mission? Recognition, reading, and production evidence already recorded will remain.")) return;
+    stopMissionTimer();
     state = { ...state, mission: { ...state.mission, active: null } };
     saveState(state);
     completedMissionRun = null;
@@ -1468,7 +1649,7 @@ function bindEvents() {
   });
   dom.missionAgain.addEventListener("click", () => {
     if (!completedMissionRun) return;
-    startMission(completedMissionRun.missionId, completedMissionRun.hideFurigana);
+    startMission(completedMissionRun.missionId, completedMissionRun.hideFurigana, completedMissionRun.mode);
   });
   dom.mapOpen.addEventListener("click", () => {
     renderSkillMap();
@@ -1489,6 +1670,7 @@ function bindEvents() {
       document.querySelector(`#${button.dataset.closeDialog}`).close();
     });
   });
+  dom.missionDialog.addEventListener("close", stopMissionTimer);
   dom.roleplayScenario.addEventListener("change", resetRoleplay);
   dom.roleplayReset.addEventListener("click", resetRoleplay);
   dom.roleplaySend.addEventListener("click", sendRoleplayTurn);
@@ -1530,6 +1712,10 @@ function bindEvents() {
     state = { ...state, route: { scenarioId: null, eventAt: null } };
     saveState(state);
     renderCard();
+  });
+  dom.fieldScenario.addEventListener("change", () => renderFieldSummary());
+  document.querySelectorAll("[data-field-outcome]").forEach((button) => {
+    button.addEventListener("click", () => logFieldOutcome(button.dataset.fieldOutcome));
   });
   dom.reset.addEventListener("click", () => {
     if (!window.confirm("Reset all Kaiwa practice progress on this device?")) return;

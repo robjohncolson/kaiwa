@@ -1,3 +1,5 @@
+import { emptyProductionEvidence } from "./production.js";
+
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
 
 function bktDefaults(tree, node) {
@@ -27,21 +29,24 @@ function newSkillState(tree, node, now) {
     lastOutcome: null,
     lastPracticedAt: null,
     readingCheckpointStreak: 0,
-    readingCheckpointPasses: 0
+    readingCheckpointPasses: 0,
+    production: emptyProductionEvidence()
   };
 }
 
 export function createInitialState(tree, now = Date.now()) {
   return {
-    version: 4,
+    version: 5,
     createdAt: now,
     updatedAt: now,
     totalReviews: 0,
+    totalProduction: 0,
     lastItemId: null,
     route: { scenarioId: null, eventAt: null },
     focus: { scenarioId: null, skillId: null, mode: null },
     mission: { active: null, stats: {} },
     session: { active: null, recent: [] },
+    field: { events: [] },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
@@ -89,29 +94,38 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
       mission: { ...initialSkill.observations.mission, ...savedSkill.observations?.mission },
       roleplay: { ...initialSkill.observations.roleplay, ...savedSkill.observations?.roleplay },
       hint: { ...initialSkill.observations.hint, ...savedSkill.observations?.hint }
-    }
+    },
+    production: { ...initialSkill.production, ...savedSkill.production }
   };
 }
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4, 5].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
   return {
     ...initial,
     ...candidate,
-    version: 4,
+    version: 5,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
     mission: {
-      active: candidate.mission?.active ?? null,
+      active: candidate.mission?.active ? {
+        mode: "recognition",
+        productionRevealed: false,
+        productionResponseMs: null,
+        ...candidate.mission.active
+      } : null,
       stats: { ...initial.mission.stats, ...candidate.mission?.stats }
     },
     session: {
       active: candidate.session?.active ?? null,
       recent: Array.isArray(candidate.session?.recent) ? candidate.session.recent.slice(-10) : []
+    },
+    field: {
+      events: Array.isArray(candidate.field?.events) ? candidate.field.events.slice(-100) : []
     },
     skills: Object.fromEntries(tree.nodes.map((node) => [
       node.id,
@@ -160,7 +174,7 @@ export function restoreProgressBackup(raw, tree, storage = globalThis.localStora
   if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (![1, 2, 3, 4, 5].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   const restored = mergeWithCurrentTree(envelope.state, tree, now);

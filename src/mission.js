@@ -1,3 +1,5 @@
+import { ABORT_TARGET_MS, PRODUCTION_GRADES } from "./production.js";
+
 export function missionLineIndex(content) {
   const lines = new Map();
   for (const line of content.scenarios.flatMap((scenario) => scenario.allowedUserLines)) {
@@ -64,7 +66,8 @@ export function validateMissionPack(pack, content, tree) {
   return true;
 }
 
-export function createMissionRun(mission, now = Date.now(), { hideFurigana = false } = {}) {
+export function createMissionRun(mission, now = Date.now(), { hideFurigana = false, mode = "recognition" } = {}) {
+  if (!new Set(["recognition", "production"]).has(mode)) throw new TypeError("Unknown mission mode.");
   return {
     missionId: mission.id,
     scenarioId: mission.scenarioId,
@@ -72,9 +75,12 @@ export function createMissionRun(mission, now = Date.now(), { hideFurigana = fal
     stepStartedAt: now,
     stepIndex: 0,
     hideFurigana: Boolean(hideFurigana),
+    mode,
     currentHintUsed: false,
     hints: 0,
     awaitingAdvance: false,
+    productionRevealed: false,
+    productionResponseMs: null,
     observations: [],
     completed: false,
     completedAt: null,
@@ -88,6 +94,7 @@ export function revealMissionHint(run) {
 }
 
 export function answerMissionStep(run, mission, selectedSkillId, now = Date.now()) {
+  if (run.mode !== "recognition") throw new TypeError("Production missions do not accept recognition choices.");
   if (run.completed || run.awaitingAdvance) throw new TypeError("Mission step is not accepting an answer.");
   const step = mission.steps[run.stepIndex];
   if (!step?.choiceSkillIds.includes(selectedSkillId)) throw new TypeError("Mission answer is not a fixed choice.");
@@ -109,6 +116,39 @@ export function answerMissionStep(run, mission, selectedSkillId, now = Date.now(
   };
 }
 
+export function revealProductionAnswer(run, now = Date.now()) {
+  if (run.mode !== "production" || run.completed || run.awaitingAdvance || run.productionRevealed) {
+    throw new TypeError("Production answer cannot be revealed now.");
+  }
+  return {
+    ...run,
+    productionRevealed: true,
+    productionResponseMs: Math.max(0, now - run.stepStartedAt)
+  };
+}
+
+export function gradeProductionStep(run, mission, grade, now = Date.now()) {
+  if (run.mode !== "production" || !run.productionRevealed || run.awaitingAdvance) {
+    throw new TypeError("Reveal the production answer before grading it.");
+  }
+  if (!PRODUCTION_GRADES.includes(grade)) throw new TypeError("Unknown production grade.");
+  const step = mission.steps[run.stepIndex];
+  const effectiveGrade = run.currentHintUsed && grade === "clean" ? "help" : grade;
+  const observation = {
+    stepId: step.id,
+    skillId: step.targetSkillId,
+    grade: effectiveGrade,
+    usedHint: run.currentHintUsed,
+    responseMs: run.productionResponseMs,
+    observedAt: now
+  };
+  return {
+    ...run,
+    awaitingAdvance: true,
+    observations: [...run.observations, observation]
+  };
+}
+
 export function advanceMissionRun(run, mission, now = Date.now()) {
   if (run.completed || !run.awaitingAdvance) throw new TypeError("Mission has no answered step to advance.");
   if (run.stepIndex < mission.steps.length - 1) {
@@ -117,19 +157,24 @@ export function advanceMissionRun(run, mission, now = Date.now()) {
       stepIndex: run.stepIndex + 1,
       stepStartedAt: now,
       currentHintUsed: false,
-      awaitingAdvance: false
+      awaitingAdvance: false,
+      productionRevealed: false,
+      productionResponseMs: null
     };
   }
 
-  const allUnaided = run.observations.every((observation) => observation.evidenceCorrect);
+  const allUnaided = run.mode === "production"
+    ? run.observations.every((observation) => observation.grade === "clean")
+    : run.observations.every((observation) => observation.evidenceCorrect);
   const recovery = run.observations.at(-1);
-  const recoveredSafely = recovery?.answerCorrect
-    && recovery.skillId === "abort.wakarimasen";
+  const recoveredSafely = recovery?.skillId === "abort.wakarimasen"
+    && (run.mode === "production" ? recovery.grade === "clean" : recovery.answerCorrect);
+  const abortWithinTarget = run.mode !== "production" || recovery?.responseMs <= ABORT_TARGET_MS;
   return {
     ...run,
     completed: true,
     completedAt: now,
-    outcome: allUnaided ? "clean" : recoveredSafely ? "recovered" : "failed"
+    outcome: allUnaided && abortWithinTarget ? "clean" : recoveredSafely ? "recovered" : "failed"
   };
 }
 
@@ -139,6 +184,8 @@ function emptyStats() {
     cleanRuns: 0,
     safeRecoveries: 0,
     failedRuns: 0,
+    recognitionRuns: 0,
+    productionRuns: 0,
     noFuriganaRuns: 0,
     hints: 0,
     totalResponseMs: 0,
@@ -159,7 +206,8 @@ export function recordMissionCompletion(missionState, run) {
     durationMs: Math.max(0, run.completedAt - run.startedAt),
     responseMs,
     hints: run.hints,
-    hideFurigana: run.hideFurigana
+    hideFurigana: run.hideFurigana,
+    mode: run.mode
   };
   return {
     active: null,
@@ -171,6 +219,8 @@ export function recordMissionCompletion(missionState, run) {
         cleanRuns: previous.cleanRuns + (run.outcome === "clean" ? 1 : 0),
         safeRecoveries: previous.safeRecoveries + (successfulRecovery ? 1 : 0),
         failedRuns: previous.failedRuns + (run.outcome === "failed" ? 1 : 0),
+        recognitionRuns: previous.recognitionRuns + (run.mode === "recognition" ? 1 : 0),
+        productionRuns: previous.productionRuns + (run.mode === "production" ? 1 : 0),
         noFuriganaRuns: previous.noFuriganaRuns + (run.outcome === "clean" && run.hideFurigana ? 1 : 0),
         hints: previous.hints + run.hints,
         totalResponseMs: previous.totalResponseMs + responseMs,
