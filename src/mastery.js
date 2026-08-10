@@ -1,4 +1,4 @@
-const SOURCES = Object.freeze(["card", "roleplay"]);
+const SOURCES = Object.freeze(["card", "roleplay", "hint"]);
 
 function clampProbability(value, fallback) {
   return Number.isFinite(value) ? Math.min(0.999, Math.max(0.001, value)) : fallback;

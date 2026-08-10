@@ -102,7 +102,7 @@
             { "id": "closed", "label": "へいてん — store closing", "correct": false }
           ],
           "answer": { "ja": "入荷", "reading": "にゅうか", "meaning": "Arrival of goods / coming into stock.", "note": "入荷していますか asks whether it has arrived." },
-          "zoom": { "context": "入荷していますか？", "breakdown": "入 (enter) + 荷 (goods or cargo)." }
+          "zoom": { "context": "入荷していますか？", "breakdown": "入荷 is the retail word for goods entering stock." }
         },
         {
           "id": "shimamura.pickup.meaning",
@@ -184,8 +184,8 @@
             { "id": "sixpeople", "label": "ろくにんぶん — the amount for six people", "correct": false },
             { "id": "sixdays", "label": "むいかぶん — the amount for six days", "correct": false }
           ],
-          "answer": { "ja": "六泊分", "reading": "ろっぱくぶん", "meaning": "The portion or charge for six nights.", "note": "泊 counts overnight stays; 分 means the corresponding portion." },
-          "zoom": { "context": "六泊分残っているんですが…", "breakdown": "六 (six) + 泊 (overnight stays) + 分 (the amount for)." }
+          "answer": { "ja": "六泊分", "reading": "ろっぱくぶん", "meaning": "The portion or charge for six nights.", "note": "Learn 六泊分 as one unit: the corresponding amount for six overnight stays." },
+          "zoom": { "context": "六泊分残っているんですが…", "breakdown": "六泊分 is the whole expression for the amount corresponding to six nights." }
         },
         {
           "id": "vocab.henkin.focus",
@@ -199,7 +199,7 @@
             { "id": "change", "label": "おつり — change returned after payment", "correct": false }
           ],
           "answer": { "ja": "返金", "reading": "へんきん", "meaning": "Refund.", "note": "Do not confuse it with 現金 (げんきん), cash." },
-          "zoom": { "context": "返金は可能でしょうか？", "breakdown": "返 (return) + 金 (money)." }
+          "zoom": { "context": "返金は可能でしょうか？", "breakdown": "返金 is money returned: a refund." }
         },
         {
           "id": "vocab.kanou.focus",
@@ -409,7 +409,7 @@
             { "id": "weight", "label": "The tobacco itself is physically heavy.", "correct": false },
             { "id": "smoke", "label": "The tobacco smoke is strong.", "correct": false }
           ],
-          "answer": { "ja": "たばこ税が重い", "reading": "たばこぜいが おもい", "meaning": "The tobacco-tax burden is heavy.", "note": "税金 is general tax; noun + 税 names a specific tax." },
+          "answer": { "ja": "たばこ税が重い", "reading": "たばこぜいが おもい", "meaning": "The tobacco-tax burden is heavy.", "note": "税金 is general tax; たばこ税 names the specific tobacco tax." },
           "zoom": { "context": "税負担が重い", "breakdown": "重い collocates with burden; 高い is the simpler everyday alternative." }
         }
       ]
@@ -607,6 +607,244 @@
             { "id": "district", "label": "住所検索 → 市だけ選ぶ → 案内開始", "correct": false }
           ],
           "answer": { "ja": "目的地 → メモリ地点 / 登録地点 → ここへ行く → 案内開始", "reading": "もくてきち → メモリちてん / とうろくちてん → ここへいく → あんないかいし", "meaning": "Destination → saved points → go here → start guidance.", "note": "Confirm the pin visually before starting. This public card intentionally contains no private destination." }
+        }
+      ]
+    },
+    {
+      "id": "miyazaki-readings",
+      "title": "Miyazaki place readings",
+      "purpose": "Recognize verified city and district names without storing property street numbers.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "geo.miyazaki_address", "ja": "児湯郡は「こゆぐん」、三納代は「みなしろ」と読みます。", "meaning": "児湯郡 is read Koyu-gun, and 三納代 is read Minashiro." },
+        { "skillId": "geo.miyazaki_cities", "ja": "西都市は「さいとし」、都城市は「みやこのじょうし」です。", "meaning": "西都市 is Saito-shi; 都城市 is Miyakonojo-shi." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "geo.miyazaki.address.reply",
+          "skillId": "geo.miyazaki_address",
+          "mode": "reply",
+          "priority": 1.2,
+          "prompt": "ナビに「児湯郡新富町三納代」と出ています。どう読みますか？",
+          "instruction": "Choose the verified address reading.",
+          "options": [
+            { "id": "verified", "label": "こゆぐん しんとみちょう みなしろ", "correct": true },
+            { "id": "sannoudai", "label": "じゆぐん しんとみちょう さんのうだい", "correct": false },
+            { "id": "mixed", "label": "こゆぐん にいとみまち みのうしろ", "correct": false }
+          ],
+          "answer": { "ja": "児湯郡新富町三納代", "reading": "こゆぐん しんとみちょう みなしろ", "meaning": "Koyu District, Shintomi Town, Minashiro.", "note": "Japan Post's official address data confirms みなしろ; the supplied Sannōdai reading was wrong." },
+          "zoom": { "context": "児湯郡 → 新富町 → 三納代", "breakdown": "Treat each address component as a separate tested reading." }
+        },
+        {
+          "id": "geo.miyazaki.cities.reply",
+          "skillId": "geo.miyazaki_cities",
+          "mode": "reply",
+          "prompt": "「西都市」と「都城市」をどう読み分けますか？",
+          "instruction": "Choose both city readings.",
+          "options": [
+            { "id": "correct", "label": "さいとし / みやこのじょうし", "correct": true },
+            { "id": "obvious", "label": "にしみやこし / とじょうし", "correct": false },
+            { "id": "reversed", "label": "みやこのじょうし / さいとし", "correct": false }
+          ],
+          "answer": { "ja": "西都市 / 都城市", "reading": "さいとし / みやこのじょうし", "meaning": "Saito City / Miyakonojo City.", "note": "Do not infer these place readings one character at a time." },
+          "zoom": { "context": "西都市（さいとし） / 都城市（みやこのじょうし）", "breakdown": "The full place name is the unit being learned." }
+        }
+      ]
+    },
+    {
+      "id": "school-demo",
+      "title": "Show the school site",
+      "purpose": "Explain briefly that you built a site where students can see work and grades.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "school.demo_made", "ja": "これは自分で作りました。", "meaning": "I made this myself." },
+        { "skillId": "school.demo_students", "ja": "生徒が宿題とか成績を見られるサイトです。", "meaning": "It is a site where students can see homework and grades." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "school.demo.made.meaning",
+          "skillId": "school.demo_made",
+          "mode": "meaning",
+          "prompt": "これは自分で作りました。",
+          "instruction": "What are you emphasizing?",
+          "options": [
+            { "id": "made", "label": "I made this myself.", "correct": true },
+            { "id": "student", "label": "A student made this for me.", "correct": false },
+            { "id": "bought", "label": "I bought this myself.", "correct": false }
+          ],
+          "answer": { "ja": "これは自分で作りました。", "reading": "これは じぶんで つくりました。", "meaning": "I made this myself.", "note": "AI is pronounced エーアイ if it comes up afterward." }
+        },
+        {
+          "id": "school.demo.students.meaning",
+          "skillId": "school.demo_students",
+          "mode": "meaning",
+          "prompt": "生徒が宿題とか成績を見られるサイトです。",
+          "instruction": "What does the site do?",
+          "options": [
+            { "id": "view", "label": "Students can see homework and grades.", "correct": true },
+            { "id": "teacher", "label": "Teachers can assign students to classes.", "correct": false },
+            { "id": "game", "label": "Students can play games after homework.", "correct": false }
+          ],
+          "answer": { "ja": "生徒が宿題とか成績を見られるサイトです。", "reading": "せいとが しゅくだいとか せいせきを みられる サイトです。", "meaning": "It is a site where students can see homework and grades.", "note": "生徒 is the natural K–12 word; 学生 leans university." }
+        }
+      ]
+    },
+    {
+      "id": "family-visit",
+      "title": "Arrange a family visit",
+      "purpose": "Ask for the address and time, offer food, accept hospitality, and explain a changed hotel plan.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "visit.ask_address", "ja": "住所を教えてもらえますか？ナビに入れたいので。", "meaning": "Could you tell me the address? I want to enter it in the nav." },
+        { "skillId": "visit.ask_time", "ja": "何時ごろ伺えばいいですか？", "meaning": "Around what time should I visit?" },
+        { "skillId": "visit.offer_food", "ja": "よかったら、お弁当かパン屋のパンを買っていきましょうか？", "meaning": "If you like, shall I bring a boxed meal or bakery bread?" },
+        { "skillId": "visit.accept_stay", "ja": "じゃあ、お言葉に甘えて、お世話になります。", "meaning": "Then I will accept your kind offer. Thank you for having me." },
+        { "skillId": "visit.early_checkout", "ja": "今日でチェックアウトしたいんですが。予定が変わりました。", "meaning": "I would like to check out today. My plans changed." },
+        { "skillId": "visit.nenki", "ja": "年季が入っていますね。", "meaning": "It is well-seasoned from years of use." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [
+        { "ja": "何時でもいいよ。", "meaning": "Any time is fine.", "replySkillIds": ["visit.ask_time"] },
+        { "ja": "何も持ってこなくていいよ。", "meaning": "You don't need to bring anything.", "replySkillIds": ["visit.offer_food"] }
+      ],
+      "items": [
+        {
+          "id": "visit.address.meaning",
+          "skillId": "visit.ask_address",
+          "mode": "meaning",
+          "prompt": "住所を教えてもらえますか？ナビに入れたいので。",
+          "instruction": "What are you requesting?",
+          "options": [
+            { "id": "address", "label": "Please tell me the address so I can enter it in the nav.", "correct": true },
+            { "id": "history", "label": "Please delete the address from navigation history.", "correct": false },
+            { "id": "drive", "label": "Please drive me to the address.", "correct": false }
+          ],
+          "answer": { "ja": "住所を教えてもらえますか？ナビに入れたいので。", "reading": "じゅうしょを おしえてもらえますか？ナビに いれたいので。", "meaning": "Could you tell me the address? I want to enter it in the nav.", "note": "Use 履歴 or 目的地履歴 first if you already drove there." },
+          "zoom": { "context": "履歴 / 目的地履歴", "breakdown": "The car may already have the destination in recent history." }
+        },
+        {
+          "id": "visit.time.meaning",
+          "skillId": "visit.ask_time",
+          "mode": "meaning",
+          "prompt": "何時ごろ伺えばいいですか？",
+          "instruction": "What polite scheduling question is this?",
+          "options": [
+            { "id": "time", "label": "Around what time should I visit?", "correct": true },
+            { "id": "leave", "label": "What time should you leave?", "correct": false },
+            { "id": "stay", "label": "How many days may I stay?", "correct": false }
+          ],
+          "answer": { "ja": "何時ごろ伺えばいいですか？", "reading": "なんじごろ うかがえば いいですか？", "meaning": "Around what time should I visit?", "note": "伺う is the humble form used for visiting someone." }
+        },
+        {
+          "id": "visit.food.meaning",
+          "skillId": "visit.offer_food",
+          "mode": "meaning",
+          "prompt": "よかったら、お弁当かパン屋のパンを買っていきましょうか？",
+          "instruction": "What are you offering?",
+          "options": [
+            { "id": "food", "label": "Shall I bring a boxed meal or bakery bread?", "correct": true },
+            { "id": "shop", "label": "Shall we meet at the bakery?", "correct": false },
+            { "id": "cook", "label": "Would you cook a boxed meal for me?", "correct": false }
+          ],
+          "answer": { "ja": "よかったら、お弁当かパン屋のパンを買っていきましょうか？", "reading": "よかったら、おべんとうか パンやの パンを かっていきましょうか？", "meaning": "If you like, shall I bring a boxed meal or bakery bread?", "note": "The offer stays useful without embedding a particular bakery or live opening time." }
+        },
+        {
+          "id": "visit.accept.meaning",
+          "skillId": "visit.accept_stay",
+          "mode": "meaning",
+          "prompt": "じゃあ、お言葉に甘えて、お世話になります。",
+          "instruction": "What social move is this?",
+          "options": [
+            { "id": "accept", "label": "Accept their kind offer and thank them for having me.", "correct": true },
+            { "id": "decline", "label": "Politely decline because I need Wi-Fi.", "correct": false },
+            { "id": "leave", "label": "Say I will leave immediately.", "correct": false }
+          ],
+          "answer": { "ja": "じゃあ、お言葉に甘えて、お世話になります。", "reading": "じゃあ、おことばに あまえて、おせわに なります。", "meaning": "Then I will accept your kind offer. Thank you for having me.", "note": "お言葉に甘えて is the fixed way to accept offered kindness." }
+        },
+        {
+          "id": "visit.checkout.meaning",
+          "skillId": "visit.early_checkout",
+          "mode": "meaning",
+          "prompt": "今日でチェックアウトしたいんですが。予定が変わりました。",
+          "instruction": "What are you explaining?",
+          "options": [
+            { "id": "early", "label": "I want to check out today because my plans changed.", "correct": true },
+            { "id": "extend", "label": "I want to extend the booking from today.", "correct": false },
+            { "id": "checkin", "label": "My check-in time changed today.", "correct": false }
+          ],
+          "answer": { "ja": "今日でチェックアウトしたいんですが。予定が変わりました。", "reading": "きょうで チェックアウトしたいんですが。よていが かわりました。", "meaning": "I would like to check out today. My plans changed.", "note": "A message does not itself change a booking; handle the reservation through its actual channel." }
+        },
+        {
+          "id": "visit.nenki.meaning",
+          "skillId": "visit.nenki",
+          "mode": "focus",
+          "prompt": "年季が入っている",
+          "instruction": "Choose the warm, context-appropriate meaning.",
+          "options": [
+            { "id": "seasoned", "label": "Well-worn or seasoned through years of use.", "correct": true },
+            { "id": "broken", "label": "Broken and ready to throw away.", "correct": false },
+            { "id": "new", "label": "Brand-new and unused.", "correct": false }
+          ],
+          "answer": { "ja": "年季が入っている", "reading": "ねんきが はいっている", "meaning": "Well-worn, seasoned, or showing years of skilled use.", "note": "Usually warm or admiring, not the same as shabby." },
+          "zoom": { "context": "年季が入った道具", "breakdown": "年季 is accumulated years; the phrase can praise an old tool, shop, or practiced skill." }
+        }
+      ]
+    },
+    {
+      "id": "history-talk",
+      "title": "History conversation",
+      "purpose": "Express curiosity about differing accounts without turning a long monologue into one card.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "history.perspective", "ja": "戦争について、一つの見方しか教わりません。", "meaning": "About the war, we are taught only one perspective." },
+        { "skillId": "history.alliance", "ja": "日本はドイツと同盟を結びました。", "meaning": "Japan formed an alliance with Germany." },
+        { "skillId": "history.postwar", "ja": "戦後のルールがなぜ厳しいのか、いつも考えています。", "meaning": "I often wonder why the postwar rules are so strict." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "history.perspective.meaning",
+          "skillId": "history.perspective",
+          "mode": "meaning",
+          "prompt": "戦争について、一つの見方しか教わりません。",
+          "instruction": "What limitation are you describing?",
+          "options": [
+            { "id": "view", "label": "We are taught only one perspective about the war.", "correct": true },
+            { "id": "none", "label": "We are not taught any history of the war.", "correct": false },
+            { "id": "same", "label": "Every country teaches exactly the same account.", "correct": false }
+          ],
+          "answer": { "ja": "戦争について、一つの見方しか教わりません。", "reading": "せんそうについて、ひとつの みかたしか おそわりません。", "meaning": "About the war, we are taught only one perspective.", "note": "見方 leaves room for sincere differing perspectives; バージョン can imply one is false." }
+        },
+        {
+          "id": "history.alliance.meaning",
+          "skillId": "history.alliance",
+          "mode": "meaning",
+          "prompt": "日本はドイツと同盟を結びました。",
+          "instruction": "What historical relationship does this state?",
+          "options": [
+            { "id": "alliance", "label": "Japan formed an alliance with Germany.", "correct": true },
+            { "id": "war", "label": "Japan declared war on Germany in World War II.", "correct": false },
+            { "id": "neutral", "label": "Japan remained neutral toward Germany.", "correct": false }
+          ],
+          "answer": { "ja": "日本はドイツと同盟を結びました。", "reading": "にほんは ドイツと どうめいを むすびました。", "meaning": "Japan formed an alliance with Germany.", "note": "This corrects the source's accidental “went to war with Germany” wording for World War II." }
+        },
+        {
+          "id": "history.postwar.meaning",
+          "skillId": "history.postwar",
+          "mode": "meaning",
+          "prompt": "戦後のルールがなぜ厳しいのか、いつも考えています。",
+          "instruction": "What are you wondering about?",
+          "options": [
+            { "id": "rules", "label": "Why the postwar rules are so strict.", "correct": true },
+            { "id": "alliance", "label": "Why the wartime alliance was informal.", "correct": false },
+            { "id": "school", "label": "Why schools no longer teach history.", "correct": false }
+          ],
+          "answer": { "ja": "戦後のルールがなぜ厳しいのか、いつも考えています。", "reading": "せんごの ルールが なぜ きびしいのか、いつも かんがえています。", "meaning": "I often wonder why the postwar rules are so strict.", "note": "ルール remains intentionally broad; use 憲法 only if you specifically mean the constitution." }
         }
       ]
     }

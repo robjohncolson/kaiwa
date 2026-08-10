@@ -14,7 +14,8 @@ function skill() {
     incorrect: 0,
     observations: {
       card: { correct: 0, incorrect: 0 },
-      roleplay: { correct: 0, incorrect: 0 }
+      roleplay: { correct: 0, incorrect: 0 },
+      hint: { correct: 0, incorrect: 0 }
     }
   };
 }

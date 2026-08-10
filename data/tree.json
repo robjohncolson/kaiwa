@@ -42,7 +42,20 @@
     { "id": "nav.start_guidance", "label": "Start guidance" },
     { "id": "nav.phone_search", "label": "Phone-number search" },
     { "id": "nav.address_search", "label": "Rural address branch" },
-    { "id": "nav.saved_route", "label": "Route to saved point" }
+    { "id": "nav.saved_route", "label": "Route to saved point" },
+    { "id": "geo.miyazaki_address", "label": "Read a Miyazaki address branch" },
+    { "id": "geo.miyazaki_cities", "label": "Distinguish Miyazaki city readings" },
+    { "id": "school.demo_made", "label": "Say I made the site" },
+    { "id": "school.demo_students", "label": "Explain the student site" },
+    { "id": "visit.ask_address", "label": "Ask for an address" },
+    { "id": "visit.ask_time", "label": "Ask when to visit" },
+    { "id": "visit.offer_food", "label": "Offer to bring food" },
+    { "id": "visit.accept_stay", "label": "Accept hospitality" },
+    { "id": "visit.early_checkout", "label": "Explain early checkout" },
+    { "id": "visit.nenki", "label": "Recognize seasoned use" },
+    { "id": "history.perspective", "label": "Discuss differing perspectives" },
+    { "id": "history.alliance", "label": "Describe the alliance" },
+    { "id": "history.postwar", "label": "Ask about postwar rules" }
   ],
   "edges": [
     { "from": "vocab.toriyose", "to": "shimamura.pickup" },
@@ -64,6 +77,15 @@
     { "from": "nav.ooaza", "to": "nav.address_search" },
     { "from": "nav.memory_point", "to": "nav.saved_route" },
     { "from": "nav.vicinity", "to": "nav.saved_route" },
-    { "from": "nav.start_guidance", "to": "nav.saved_route" }
+    { "from": "nav.start_guidance", "to": "nav.saved_route" },
+    { "from": "geo.miyazaki_address", "to": "geo.miyazaki_cities" },
+    { "from": "school.demo_made", "to": "school.demo_students" },
+    { "from": "polite.basics", "to": "visit.ask_address" },
+    { "from": "polite.basics", "to": "visit.ask_time" },
+    { "from": "visit.ask_time", "to": "visit.offer_food" },
+    { "from": "visit.ask_time", "to": "visit.accept_stay" },
+    { "from": "hotel.checkout", "to": "visit.early_checkout" },
+    { "from": "history.perspective", "to": "history.alliance" },
+    { "from": "history.perspective", "to": "history.postwar" }
   ]
 }

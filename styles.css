@@ -148,6 +148,12 @@ select, input {
 .japanese-prompt { font-size: clamp(1.65rem, 7vw, 2.7rem); letter-spacing: 0; }
 .focus-prompt { font-size: clamp(2.35rem, 12vw, 4.3rem); }
 .instruction { margin: 0.85rem 0 1.2rem; color: var(--muted); line-height: 1.4; }
+.furigana-controls { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; margin: -0.55rem 0 1rem; }
+.furigana-status { margin: 0; color: var(--muted); font-size: 0.74rem; line-height: 1.35; }
+.furigana-controls .text-button { flex: 0 0 auto; font-size: 0.78rem; }
+ruby { ruby-align: center; }
+rt { color: var(--green); font-size: 0.46em; font-weight: 700; letter-spacing: 0; }
+ruby.furigana-hidden rt { display: none; }
 
 .reveal-button {
   width: 100%;
