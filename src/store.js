@@ -25,13 +25,15 @@ function newSkillState(tree, node, now) {
     cramDue: now,
     longDue: null,
     lastOutcome: null,
-    lastPracticedAt: null
+    lastPracticedAt: null,
+    readingCheckpointStreak: 0,
+    readingCheckpointPasses: 0
   };
 }
 
 export function createInitialState(tree, now = Date.now()) {
   return {
-    version: 3,
+    version: 4,
     createdAt: now,
     updatedAt: now,
     totalReviews: 0,
@@ -39,6 +41,7 @@ export function createInitialState(tree, now = Date.now()) {
     route: { scenarioId: null, eventAt: null },
     focus: { scenarioId: null, skillId: null, mode: null },
     mission: { active: null, stats: {} },
+    session: { active: null, recent: [] },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
@@ -92,19 +95,23 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
   return {
     ...initial,
     ...candidate,
-    version: 3,
+    version: 4,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
     mission: {
       active: candidate.mission?.active ?? null,
       stats: { ...initial.mission.stats, ...candidate.mission?.stats }
+    },
+    session: {
+      active: candidate.session?.active ?? null,
+      recent: Array.isArray(candidate.session?.recent) ? candidate.session.recent.slice(-10) : []
     },
     skills: Object.fromEntries(tree.nodes.map((node) => [
       node.id,
@@ -129,4 +136,34 @@ export function saveState(state, storage = globalThis.localStorage) {
 
 export function clearState(storage = globalThis.localStorage) {
   storage?.removeItem(STORAGE_KEY);
+}
+
+export function createProgressBackup(state, now = Date.now()) {
+  return JSON.stringify({
+    format: "kaiwa-progress",
+    version: 1,
+    exportedAt: now,
+    state
+  }, null, 2);
+}
+
+export function restoreProgressBackup(raw, tree, storage = globalThis.localStorage, now = Date.now()) {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > 2_000_000) {
+    throw new TypeError("Kaiwa backup must be a non-empty JSON file under 2 MB.");
+  }
+  let envelope;
+  try {
+    envelope = JSON.parse(raw);
+  } catch {
+    throw new TypeError("This is not valid JSON.");
+  }
+  if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
+    throw new TypeError("This is not a Kaiwa progress backup.");
+  }
+  if (![1, 2, 3, 4].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+    throw new TypeError("This Kaiwa backup has an unsupported state schema.");
+  }
+  const restored = mergeWithCurrentTree(envelope.state, tree, now);
+  saveState(restored, storage);
+  return restored;
 }

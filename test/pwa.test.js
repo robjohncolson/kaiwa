@@ -23,6 +23,7 @@ test("manifest assets exist and the offline shell covers browser dependencies", 
     "src/providers/llm.js",
     "src/readings.js",
     "src/scheduler.js",
+    "src/session.js",
     "src/store.js",
     "src/ui.js"
   ];

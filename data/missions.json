@@ -5,7 +5,7 @@
       "id": "shimamura-loop",
       "scenarioId": "shimamura-pickup",
       "title": "Pick up the SXC-1",
-      "purpose": "State the pickup, answer the name prompt, then exit safely when the exchange opens up.",
+      "purpose": "State the pickup, answer the name prompt, check whether the special order arrived, then exit safely when the exchange opens up.",
       "steps": [
         {
           "id": "state-purpose",
@@ -22,6 +22,14 @@
           "meaning": "Your name?",
           "targetSkillId": "identity.name_katakana",
           "choiceSkillIds": ["identity.name_katakana", "shimamura.pickup", "abort.wakarimasen"]
+        },
+        {
+          "id": "check-stock",
+          "kind": "staff",
+          "prompt": "SXC-1は福岡店からの取り寄せですね。",
+          "meaning": "The SXC-1 is a special order from the Fukuoka branch, right?",
+          "targetSkillId": "shimamura.stock_check",
+          "choiceSkillIds": ["shimamura.stock_check", "shimamura.pickup", "abort.wakarimasen"]
         },
         {
           "id": "abort-open-question",
@@ -102,6 +110,142 @@
           "meaning": "How have things been lately?",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["social.fishing", "family.thanks_hosting", "abort.wakarimasen"]
+        }
+      ]
+    },
+    {
+      "id": "family-catchup-loop",
+      "scenarioId": "family-social",
+      "title": "Make family plans and catch up",
+      "purpose": "Offer a treat, ask about fishing and shochu, share the synth idea, then exit an open question safely.",
+      "steps": [
+        {
+          "id": "offer-plan",
+          "kind": "staff",
+          "prompt": "どこがいい？",
+          "meaning": "Where would you like to go?",
+          "targetSkillId": "social.treat",
+          "choiceSkillIds": ["social.treat", "social.help_shochu", "abort.wakarimasen"]
+        },
+        {
+          "id": "ask-fishing",
+          "kind": "staff",
+          "prompt": "釣りはどう？",
+          "meaning": "How is fishing?",
+          "targetSkillId": "social.fishing",
+          "choiceSkillIds": ["social.fishing", "social.synth_gift", "abort.wakarimasen"]
+        },
+        {
+          "id": "ask-shochu",
+          "kind": "staff",
+          "prompt": "お父さんの焼酎はどうする？",
+          "meaning": "What will you do about shochu for your father?",
+          "targetSkillId": "social.help_shochu",
+          "choiceSkillIds": ["social.help_shochu", "social.treat", "abort.wakarimasen"]
+        },
+        {
+          "id": "ask-interesting",
+          "kind": "staff",
+          "prompt": "面白いものはある？",
+          "meaning": "Is there anything interesting?",
+          "targetSkillId": "social.synth_gift",
+          "choiceSkillIds": ["social.synth_gift", "social.fishing", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "仕事はどう？",
+          "meaning": "How is work?",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["social.fishing", "social.treat", "abort.wakarimasen"]
+        }
+      ]
+    },
+    {
+      "id": "rural-navigation-loop",
+      "scenarioId": "rural-navigation",
+      "title": "Enter and recover a rural destination",
+      "purpose": "Choose phone search, protect the local 丁 reading, start from a saved point, then abort a detailed follow-up.",
+      "steps": [
+        {
+          "id": "find-search",
+          "kind": "staff",
+          "prompt": "電話番号で検索しますか？",
+          "meaning": "Will you search by phone number?",
+          "targetSkillId": "nav.phone_search",
+          "choiceSkillIds": ["nav.phone_search", "nav.address_search", "abort.wakarimasen"]
+        },
+        {
+          "id": "protect-reading",
+          "kind": "staff",
+          "prompt": "丁の読み方は？",
+          "meaning": "How is 丁 read?",
+          "targetSkillId": "nav.address_search",
+          "choiceSkillIds": ["nav.address_search", "nav.saved_route", "abort.wakarimasen"]
+        },
+        {
+          "id": "start-saved",
+          "kind": "staff",
+          "prompt": "登録地点です。",
+          "meaning": "Here is the saved point.",
+          "targetSkillId": "nav.saved_route",
+          "choiceSkillIds": ["nav.saved_route", "nav.phone_search", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "住所をもっと詳しく教えてください。",
+          "meaning": "Please explain the address in more detail.",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["nav.address_search", "nav.phone_search", "abort.wakarimasen"]
+        }
+      ]
+    },
+    {
+      "id": "family-visit-loop",
+      "scenarioId": "family-visit",
+      "title": "Arrange and accept a family visit",
+      "purpose": "Ask for the address and time, offer food, accept the invitation to stay, then recover from an open request.",
+      "steps": [
+        {
+          "id": "ask-address",
+          "kind": "staff",
+          "prompt": "住所はわかる？",
+          "meaning": "Do you know the address?",
+          "targetSkillId": "visit.ask_address",
+          "choiceSkillIds": ["visit.ask_address", "visit.ask_time", "abort.wakarimasen"]
+        },
+        {
+          "id": "choose-time",
+          "kind": "staff",
+          "prompt": "何時でもいいよ。",
+          "meaning": "Any time is fine.",
+          "targetSkillId": "visit.ask_time",
+          "choiceSkillIds": ["visit.ask_time", "visit.offer_food", "abort.wakarimasen"]
+        },
+        {
+          "id": "offer-food",
+          "kind": "staff",
+          "prompt": "何も持ってこなくていいよ。",
+          "meaning": "You do not need to bring anything.",
+          "targetSkillId": "visit.offer_food",
+          "choiceSkillIds": ["visit.offer_food", "visit.ask_address", "abort.wakarimasen"]
+        },
+        {
+          "id": "accept-stay",
+          "kind": "staff",
+          "prompt": "うちに泊まっていく？",
+          "meaning": "Will you stay at our place?",
+          "targetSkillId": "visit.accept_stay",
+          "choiceSkillIds": ["visit.accept_stay", "visit.offer_food", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "ほかに何か必要？",
+          "meaning": "Do you need anything else?",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["visit.accept_stay", "visit.ask_time", "abort.wakarimasen"]
         }
       ]
     }

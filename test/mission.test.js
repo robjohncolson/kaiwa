@@ -47,7 +47,11 @@ test("mission pack is closed-loop fixed content with a final abort", async () =>
   const { pack, content, tree } = await fixtures();
 
   assert.equal(validateMissionPack(pack, content, tree), true);
-  assert.equal(pack.missions.length, 3);
+  assert.equal(pack.missions.length, 6);
+  assert.deepEqual(
+    new Set(pack.missions.map((mission) => mission.scenarioId)),
+    new Set(["shimamura-pickup", "hotel-refund", "family-social", "rural-navigation", "family-visit"])
+  );
   assert.ok(missionLineIndex(content).has("abort.wakarimasen"));
   assert.ok(pack.missions.every((mission) => mission.steps.at(-1).kind === "off_script"));
 });
