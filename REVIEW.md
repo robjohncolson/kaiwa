@@ -24,7 +24,7 @@ Keep the product idea: a small, closed-loop trip drill with a local scheduler an
 
 ## Keep, change, cut
 
-Keep closed scenarios, Japanese-first recognition, a globally available abort, the small prerequisite DAG, local persistence, and route urgency. Use fixed-parameter BKT only for observed choices, keep the abort skill ungated, keep `longDue` inactive, and label `コロソン` as a placeholder that must be confirmed.
+Keep closed scenarios, Japanese-first recognition, a globally available abort, the small prerequisite DAG, local persistence, and route urgency. Use fixed-parameter BKT only for observed choices, keep the abort skill ungated, and keep `longDue` inactive. `コルソン` is now user-confirmed; keep it in content data rather than UI logic.
 
 Do **not** build local models, speech recognition, TTS/audio caching, Anki import/export or sync, FSRS/SM-2, fitted BKT parameters, automatic mastery propagation, live navigation, a general JLPT tree, accounts/cloud sync, or private trip data. The added navigation cards teach labels and reading traps; they are not a route planner.
 

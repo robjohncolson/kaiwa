@@ -27,8 +27,8 @@ test("every skill has a Japanese-first objective card", async () => {
     assert.equal(item.options.filter((option) => option.correct).length, 1);
   }
 
-  assert.equal(content.placeholders.nameKatakana.value, "コロソン");
-  assert.equal(content.placeholders.nameKatakana.confirmed, false);
+  assert.equal(content.placeholders.nameKatakana.value, "コルソン");
+  assert.equal(content.placeholders.nameKatakana.confirmed, true);
 });
 
 test("specialized terms have zoom context and public content omits live trip coordinates", async () => {
