@@ -6,7 +6,7 @@ async function readJson(path) {
   return JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
 }
 
-test("seed content covers every skill and includes a recognition card", async () => {
+test("every skill has a Japanese-first objective card", async () => {
   const [content, tree] = await Promise.all([
     readJson("../data/scenarios.json"),
     readJson("../data/tree.json")
@@ -18,14 +18,30 @@ test("seed content covers every skill and includes a recognition card", async ()
     assert.ok(itemSkills.has(node.id), `Missing item for ${node.id}`);
   }
 
-  const recognition = items.filter((item) => item.mode === "recognition");
-  assert.ok(recognition.length >= 1);
-  for (const item of recognition) {
+  assert.ok(items.some((item) => item.mode === "reply"));
+  assert.ok(items.some((item) => item.mode === "focus"));
+  for (const item of items) {
+    assert.ok(["meaning", "reply", "focus"].includes(item.mode), `Unexpected mode on ${item.id}`);
+    assert.match(item.prompt, /[\u3040-\u30ff\u3400-\u9fff]/, `Prompt is not Japanese-first: ${item.id}`);
+    assert.equal(item.options.length, 3, `Expected three choices on ${item.id}`);
     assert.equal(item.options.filter((option) => option.correct).length, 1);
   }
 
   assert.equal(content.placeholders.nameKatakana.value, "コロソン");
   assert.equal(content.placeholders.nameKatakana.confirmed, false);
+});
+
+test("specialized terms have zoom context and public content omits live trip coordinates", async () => {
+  const content = await readJson("../data/scenarios.json");
+  const items = content.scenarios.flatMap((scenario) => scenario.items);
+  const focusItems = items.filter((item) => item.mode === "focus");
+  assert.ok(focusItems.length >= 10);
+  assert.ok(focusItems.every((item) => item.zoom?.context && item.zoom?.breakdown));
+
+  const serialized = JSON.stringify(content);
+  assert.equal(serialized.includes("google.com/maps"), false);
+  assert.equal(serialized.includes("〒"), false);
+  assert.equal(/\b\d{2,3}\.\d{4,},\s*\d{3}\.\d{4,}\b/.test(serialized), false);
 });
 
 test("the skill graph is acyclic and all edges reference real nodes", async () => {

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "placeholders": {
     "nameKatakana": {
       "value": "コロソン",
@@ -20,34 +20,38 @@
       "staffPrompts": [],
       "items": [
         {
-          "id": "polite.thanks.production",
+          "id": "polite.thanks.meaning",
           "skillId": "polite.basics",
-          "mode": "production",
-          "prompt": "Finish a simple exchange with a polite thank-you.",
-          "answer": {
-            "ja": "ありがとうございました。",
-            "meaning": "Thank you very much.",
-            "note": "Use this as the safe ending to a short exchange."
-          }
+          "mode": "meaning",
+          "prompt": "ありがとうございました。",
+          "instruction": "What does this safe closing mean?",
+          "options": [
+            { "id": "thanks", "label": "Thank you very much.", "correct": true },
+            { "id": "sorry", "label": "I am very sorry.", "correct": false },
+            { "id": "welcome", "label": "You are welcome.", "correct": false }
+          ],
+          "answer": { "ja": "ありがとうございました。", "reading": "ありがとうございました。", "meaning": "Thank you very much.", "note": "A safe ending after an exchange is complete." }
         },
         {
-          "id": "abort.production",
+          "id": "abort.meaning",
           "skillId": "abort.wakarimasen",
-          "mode": "production",
-          "priority": 1.2,
-          "prompt": "The conversation has gone off script. Stop it politely.",
-          "answer": {
-            "ja": "すみません、日本語がわかりません。",
-            "meaning": "Sorry, I don't understand Japanese.",
-            "note": "This is always available; it has no prerequisite. Show the screen if needed."
-          }
+          "mode": "meaning",
+          "priority": 1.3,
+          "prompt": "すみません、日本語がわかりません。",
+          "instruction": "What does this emergency line do?",
+          "options": [
+            { "id": "abort", "label": "Apologizes and says I do not understand Japanese.", "correct": true },
+            { "id": "repeat", "label": "Asks them to repeat more slowly.", "correct": false },
+            { "id": "english", "label": "Asks whether they speak English.", "correct": false }
+          ],
+          "answer": { "ja": "すみません、日本語がわかりません。", "reading": "すみません、にほんごがわかりません。", "meaning": "Sorry, I don't understand Japanese.", "note": "Always available. Say it once, then show the phone sheet." }
         }
       ]
     },
     {
       "id": "shimamura-pickup",
-      "title": "Shimamura pickup",
-      "purpose": "Collect the Casio SXC-1 ordered from the Fukuoka store.",
+      "title": "Music-store pickup",
+      "purpose": "Collect an item ordered from another branch and check whether it arrived.",
       "abortSkillId": "abort.wakarimasen",
       "allowedUserLines": [
         { "skillId": "shimamura.pickup", "ja": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。", "meaning": "I came to pick up the Casio SXC-1 ordered from the Fukuoka store." },
@@ -59,33 +63,79 @@
       ],
       "items": [
         {
-          "id": "shimamura.pickup.production",
-          "skillId": "shimamura.pickup",
-          "mode": "production",
-          "prompt": "Tell Shimamura why you are here.",
-          "answer": {
-            "ja": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。",
-            "meaning": "I came to pick up the Casio SXC-1 ordered from the Fukuoka store.",
-            "note": "This is the fixed opener. Do not improvise beyond the closed loop."
-          }
+          "id": "vocab.toriyose.focus",
+          "skillId": "vocab.toriyose",
+          "mode": "focus",
+          "prompt": "取り寄せ",
+          "instruction": "Local task word: choose its reading and meaning.",
+          "options": [
+            { "id": "order", "label": "とりよせ — special order from elsewhere", "correct": true },
+            { "id": "return", "label": "とりかえ — exchange or replacement", "correct": false },
+            { "id": "reserve", "label": "よやく — reservation", "correct": false }
+          ],
+          "answer": { "ja": "取り寄せ", "reading": "とりよせ", "meaning": "A special order brought in from another store.", "note": "取り寄せる is the verb: to order something in." },
+          "zoom": { "context": "福岡店から取り寄せた…", "breakdown": "取る + 寄せる; in retail, the compound means bringing stock in from another location." }
         },
         {
-          "id": "shimamura.stock.production",
+          "id": "vocab.uketori.focus",
+          "skillId": "vocab.uketori",
+          "mode": "focus",
+          "prompt": "受け取り",
+          "instruction": "Choose the reading and trip meaning.",
+          "options": [
+            { "id": "pickup", "label": "うけとり — receipt / pickup", "correct": true },
+            { "id": "delivery", "label": "はいたつ — delivery", "correct": false },
+            { "id": "payment", "label": "しはらい — payment", "correct": false }
+          ],
+          "answer": { "ja": "受け取り", "reading": "うけとり", "meaning": "Receiving or picking something up.", "note": "受け取りに来ました means “I came to pick it up.”" },
+          "zoom": { "context": "受け取りに来ました。", "breakdown": "受け取る (to receive) becomes the noun 受け取り." }
+        },
+        {
+          "id": "vocab.nyuka.focus",
+          "skillId": "vocab.nyuka",
+          "mode": "focus",
+          "prompt": "入荷",
+          "instruction": "Choose the store meaning.",
+          "options": [
+            { "id": "arrived", "label": "にゅうか — stock arriving at a store", "correct": true },
+            { "id": "sold", "label": "ばいきゃく — selling an item", "correct": false },
+            { "id": "closed", "label": "へいてん — store closing", "correct": false }
+          ],
+          "answer": { "ja": "入荷", "reading": "にゅうか", "meaning": "Arrival of goods / coming into stock.", "note": "入荷していますか asks whether it has arrived." },
+          "zoom": { "context": "入荷していますか？", "breakdown": "入 (enter) + 荷 (goods or cargo)." }
+        },
+        {
+          "id": "shimamura.pickup.meaning",
+          "skillId": "shimamura.pickup",
+          "mode": "meaning",
+          "prompt": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。",
+          "instruction": "What are you telling the clerk?",
+          "options": [
+            { "id": "pickup", "label": "I came to pick up the Casio ordered from the Fukuoka store.", "correct": true },
+            { "id": "buy", "label": "I want to order a Casio and have it sent to Fukuoka.", "correct": false },
+            { "id": "repair", "label": "I brought a Casio from Fukuoka for repair.", "correct": false }
+          ],
+          "answer": { "ja": "福岡店から取り寄せたカシオ SXC-1 を受け取りに来ました。", "reading": "ふくおかてんから とりよせた カシオ SXC-1を うけとりに きました。", "meaning": "I came to pick up the Casio SXC-1 ordered from the Fukuoka store.", "note": "The focused words must be recognized before this whole line unlocks." }
+        },
+        {
+          "id": "shimamura.stock.meaning",
           "skillId": "shimamura.stock_check",
-          "mode": "production",
-          "prompt": "Ask whether the item has arrived.",
-          "answer": {
-            "ja": "入荷していますか？",
-            "meaning": "Has it arrived / is it in stock?",
-            "note": "Optional. The pickup opener may be enough."
-          }
+          "mode": "meaning",
+          "prompt": "入荷していますか？",
+          "instruction": "What are you asking?",
+          "options": [
+            { "id": "stock", "label": "Has it arrived / is it in stock?", "correct": true },
+            { "id": "price", "label": "How much does it cost?", "correct": false },
+            { "id": "reserve", "label": "Can I reserve it?", "correct": false }
+          ],
+          "answer": { "ja": "入荷していますか？", "reading": "にゅうかしていますか？", "meaning": "Has it arrived / is it in stock?", "note": "Optional after the pickup opener." }
         }
       ]
     },
     {
       "id": "name-prompt",
       "title": "Name prompt",
-      "purpose": "Recognize the likely staff question and show the reservation name.",
+      "purpose": "Recognize the staff question and choose the fixed response.",
       "abortSkillId": "abort.wakarimasen",
       "allowedUserLines": [
         { "skillId": "identity.name_katakana", "ja": "コロソン", "meaning": "COLSON — placeholder katakana name card" },
@@ -96,28 +146,25 @@
       ],
       "items": [
         {
-          "id": "name.prompt.recognition",
+          "id": "name.prompt.reply",
           "skillId": "identity.name_katakana",
-          "mode": "recognition",
+          "mode": "reply",
           "prompt": "お名前は？",
-          "instruction": "What is staff asking?",
+          "instruction": "Choose the correct fixed reply.",
           "options": [
-            { "id": "name", "label": "They are asking for my name.", "correct": true },
-            { "id": "payment", "label": "They are asking how I will pay.", "correct": false },
-            { "id": "stock", "label": "They are saying the item is out of stock.", "correct": false }
+            { "id": "name", "label": "コロソン — show or say the reservation name", "correct": true },
+            { "id": "card", "label": "カードでお願いします — by card, please", "correct": false },
+            { "id": "stock", "label": "入荷していますか — has it arrived?", "correct": false }
           ],
-          "answer": {
-            "ja": "コロソン",
-            "meaning": "Show or say the katakana name on the reservation.",
-            "note": "UNCONFIRMED PLACEHOLDER: replace コロソン with the exact reservation name."
-          }
+          "answer": { "ja": "コロソン", "reading": "コロソン", "meaning": "Show or say the katakana name on the reservation.", "note": "UNCONFIRMED PLACEHOLDER: replace コロソン with the exact reservation name." },
+          "zoom": { "context": "お名前は？", "breakdown": "お + 名前 makes “name” polite; は leaves the rest of the question understood." }
         }
       ]
     },
     {
       "id": "hotel-refund",
       "title": "Early checkout + refund",
-      "purpose": "Ask to check out early, then ask whether six unused nights can be refunded.",
+      "purpose": "Check out early, then ask whether unused nights can be refunded.",
       "abortSkillId": "abort.wakarimasen",
       "allowedUserLines": [
         { "skillId": "hotel.checkout", "ja": "チェックアウトをお願いします。", "meaning": "I'd like to check out, please." },
@@ -127,74 +174,439 @@
       "staffPrompts": [],
       "items": [
         {
-          "id": "hotel.checkout.production",
-          "skillId": "hotel.checkout",
-          "mode": "production",
-          "prompt": "Ask the office to check you out.",
-          "answer": {
-            "ja": "チェックアウトをお願いします。",
-            "meaning": "I'd like to check out, please.",
-            "note": "Use this first, before the refund question."
-          }
+          "id": "vocab.roppakubun.focus",
+          "skillId": "vocab.roppakubun",
+          "mode": "focus",
+          "prompt": "六泊分",
+          "instruction": "Choose the reading and amount.",
+          "options": [
+            { "id": "six", "label": "ろっぱくぶん — the amount for six nights", "correct": true },
+            { "id": "sixpeople", "label": "ろくにんぶん — the amount for six people", "correct": false },
+            { "id": "sixdays", "label": "むいかぶん — the amount for six days", "correct": false }
+          ],
+          "answer": { "ja": "六泊分", "reading": "ろっぱくぶん", "meaning": "The portion or charge for six nights.", "note": "泊 counts overnight stays; 分 means the corresponding portion." },
+          "zoom": { "context": "六泊分残っているんですが…", "breakdown": "六 (six) + 泊 (overnight stays) + 分 (the amount for)." }
         },
         {
-          "id": "hotel.refund.production",
+          "id": "vocab.henkin.focus",
+          "skillId": "vocab.henkin",
+          "mode": "focus",
+          "prompt": "返金",
+          "instruction": "Choose the reading and meaning.",
+          "options": [
+            { "id": "refund", "label": "へんきん — refund", "correct": true },
+            { "id": "payment", "label": "げんきん — cash", "correct": false },
+            { "id": "change", "label": "おつり — change returned after payment", "correct": false }
+          ],
+          "answer": { "ja": "返金", "reading": "へんきん", "meaning": "Refund.", "note": "Do not confuse it with 現金 (げんきん), cash." },
+          "zoom": { "context": "返金は可能でしょうか？", "breakdown": "返 (return) + 金 (money)." }
+        },
+        {
+          "id": "vocab.kanou.focus",
+          "skillId": "vocab.kanou",
+          "mode": "focus",
+          "prompt": "可能",
+          "instruction": "Choose the reading and function.",
+          "options": [
+            { "id": "possible", "label": "かのう — possible", "correct": true },
+            { "id": "confirmed", "label": "かくにん — confirmation", "correct": false },
+            { "id": "necessary", "label": "ひつよう — necessary", "correct": false }
+          ],
+          "answer": { "ja": "可能", "reading": "かのう", "meaning": "Possible.", "note": "可能でしょうか is a soft “would it be possible?”" },
+          "zoom": { "context": "返金は可能でしょうか？", "breakdown": "でしょうか makes the request less assuming than できますか." }
+        },
+        {
+          "id": "hotel.checkout.meaning",
+          "skillId": "hotel.checkout",
+          "mode": "meaning",
+          "prompt": "チェックアウトをお願いします。",
+          "instruction": "What are you requesting?",
+          "options": [
+            { "id": "checkout", "label": "I'd like to check out, please.", "correct": true },
+            { "id": "late", "label": "Could I check out late?", "correct": false },
+            { "id": "checkin", "label": "I'd like to check in, please.", "correct": false }
+          ],
+          "answer": { "ja": "チェックアウトをお願いします。", "reading": "チェックアウトを おねがいします。", "meaning": "I'd like to check out, please.", "note": "Use this before asking about money." }
+        },
+        {
+          "id": "hotel.refund.meaning",
           "skillId": "hotel.refund_six_nights",
-          "mode": "production",
-          "prompt": "Ask whether the six unused nights can be refunded.",
-          "answer": {
-            "ja": "六泊分残っているんですが、返金は可能でしょうか？",
-            "meaning": "I have six nights remaining; would a refund be possible?",
-            "note": "This asks, but does not assume, that a refund is available. Abort if the reply becomes open-ended."
-          }
+          "mode": "meaning",
+          "prompt": "六泊分残っているんですが、返金は可能でしょうか？",
+          "instruction": "What does the full request ask?",
+          "options": [
+            { "id": "refund", "label": "I have six nights left; would a refund be possible?", "correct": true },
+            { "id": "extend", "label": "Could I extend my stay by six nights?", "correct": false },
+            { "id": "pay", "label": "Can I pay cash for the remaining six nights?", "correct": false }
+          ],
+          "answer": { "ja": "六泊分残っているんですが、返金は可能でしょうか？", "reading": "ろっぱくぶん のこっているんですが、へんきんは かのうでしょうか？", "meaning": "I have six nights remaining; would a refund be possible?", "note": "It asks without assuming a refund is allowed." }
         }
       ]
     },
     {
-      "id": "family-dinner",
-      "title": "Dinner with relatives",
-      "purpose": "Greet the host, begin the meal, and thank them afterward.",
+      "id": "family-social",
+      "title": "Family + social plans",
+      "purpose": "Handle dinner, make a low-pressure invitation, and ask about interests or help.",
       "abortSkillId": "abort.wakarimasen",
       "allowedUserLines": [
-        { "skillId": "family.greeting", "ja": "こんばんは。お世話になります。", "meaning": "Good evening. Thank you for having / looking after me." },
+        { "skillId": "family.greeting", "ja": "こんばんは。お世話になります。", "meaning": "Good evening. Thank you for having me." },
         { "skillId": "family.itadakimasu", "ja": "いただきます。", "meaning": "Said before eating." },
         { "skillId": "family.thanks_hosting", "ja": "今日はどうもありがとうございました。", "meaning": "Thank you very much for today." },
+        { "skillId": "social.treat", "ja": "どこでもいいです。温泉でもラーメンでも。何でも僕に払わせてください。", "meaning": "Anywhere is fine—onsen or ramen. Whatever it is, let me treat." },
+        { "skillId": "social.help_shochu", "ja": "都合のいい時でいいから、お父さんの焼酎を選ぶの、手伝ってくれない？", "meaning": "When convenient, could you help me choose shochu for your father?" },
+        { "skillId": "social.fishing", "ja": "釣りはどう？まだ行ってる？", "meaning": "How's fishing? Still going?" },
+        { "skillId": "social.synth_gift", "ja": "面白いシンセがあって、よかったら一つあげるよ。", "meaning": "There's an interesting synth; if you like, I'll give you one." },
         { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
       ],
       "staffPrompts": [],
       "items": [
         {
-          "id": "family.greeting.production",
+          "id": "family.greeting.meaning",
           "skillId": "family.greeting",
-          "mode": "production",
-          "prompt": "Greet your relatives when you arrive for dinner.",
-          "answer": {
-            "ja": "こんばんは。お世話になります。",
-            "meaning": "Good evening. Thank you for having / looking after me.",
-            "note": "Say the two short lines; no need to add an open-ended explanation."
-          }
+          "mode": "meaning",
+          "prompt": "こんばんは。お世話になります。",
+          "instruction": "What social job does this do?",
+          "options": [
+            { "id": "greet", "label": "Greets the host and thanks them for having or looking after me.", "correct": true },
+            { "id": "leave", "label": "Says good night and announces I am leaving.", "correct": false },
+            { "id": "meal", "label": "Thanks the cook after finishing the meal.", "correct": false }
+          ],
+          "answer": { "ja": "こんばんは。お世話になります。", "reading": "こんばんは。おせわに なります。", "meaning": "Good evening. Thank you for having / looking after me.", "note": "お世話になります is broader than a literal English translation." },
+          "zoom": { "context": "お世話になります", "breakdown": "世話 is care/help; the fixed phrase acknowledges the other person's support." }
         },
         {
-          "id": "family.itadakimasu.production",
+          "id": "family.itadakimasu.meaning",
           "skillId": "family.itadakimasu",
-          "mode": "production",
-          "prompt": "Say the customary phrase before eating.",
-          "answer": {
-            "ja": "いただきます。",
-            "meaning": "Said before eating.",
-            "note": "A fixed ritual phrase, not an invitation to continue the conversation."
-          }
+          "mode": "meaning",
+          "prompt": "いただきます。",
+          "instruction": "When is this fixed phrase used?",
+          "options": [
+            { "id": "before", "label": "Immediately before eating.", "correct": true },
+            { "id": "after", "label": "After finishing the meal.", "correct": false },
+            { "id": "invite", "label": "When inviting someone to a restaurant.", "correct": false }
+          ],
+          "answer": { "ja": "いただきます。", "reading": "いただきます。", "meaning": "The customary phrase said before eating.", "note": "Treat it as a ritual phrase, not a literal sentence to translate word-for-word." }
         },
         {
-          "id": "family.thanks.production",
+          "id": "family.thanks.meaning",
           "skillId": "family.thanks_hosting",
-          "mode": "production",
-          "prompt": "Thank your relatives for today.",
-          "answer": {
-            "ja": "今日はどうもありがとうございました。",
-            "meaning": "Thank you very much for today.",
-            "note": "Use near the end of the visit."
-          }
+          "mode": "meaning",
+          "prompt": "今日はどうもありがとうございました。",
+          "instruction": "When would you use this?",
+          "options": [
+            { "id": "end", "label": "Near the end: thank you very much for today.", "correct": true },
+            { "id": "arrive", "label": "On arrival: I am glad to meet you.", "correct": false },
+            { "id": "tomorrow", "label": "To confirm tomorrow's plan.", "correct": false }
+          ],
+          "answer": { "ja": "今日はどうもありがとうございました。", "reading": "きょうは どうも ありがとうございました。", "meaning": "Thank you very much for today.", "note": "A safe visit-closing line." }
+        },
+        {
+          "id": "social.treat.meaning",
+          "skillId": "social.treat",
+          "mode": "meaning",
+          "prompt": "どこでもいいです。温泉でもラーメンでも。何でも僕に払わせてください。",
+          "instruction": "What are you offering?",
+          "options": [
+            { "id": "treat", "label": "Anywhere is fine—onsen or ramen—and I want it to be my treat.", "correct": true },
+            { "id": "split", "label": "I can go anywhere, but we should split the cost.", "correct": false },
+            { "id": "choose", "label": "Please choose between onsen and ramen for me.", "correct": false }
+          ],
+          "answer": { "ja": "どこでもいいです。温泉でもラーメンでも。何でも僕に払わせてください。", "reading": "どこでも いいです。おんせんでも ラーメンでも。なんでも ぼくに はらわせてください。", "meaning": "Anywhere is fine—onsen or ramen. Whatever it is, please let me treat.", "note": "払わせてください frames paying as something you are asking permission to do." },
+          "zoom": { "context": "僕に払わせてください", "breakdown": "払う (pay) → 払わせる (let/make pay) → 払わせてください (please let me pay)." }
+        },
+        {
+          "id": "social.help_shochu.meaning",
+          "skillId": "social.help_shochu",
+          "mode": "meaning",
+          "prompt": "都合のいい時でいいから、お父さんの焼酎を選ぶの、手伝ってくれない？",
+          "instruction": "What low-pressure request is this?",
+          "options": [
+            { "id": "help", "label": "When convenient, could you help me choose shochu for your father?", "correct": true },
+            { "id": "buy", "label": "Please buy shochu for my father right now.", "correct": false },
+            { "id": "drink", "label": "Does your father want to drink shochu tonight?", "correct": false }
+          ],
+          "answer": { "ja": "都合のいい時でいいから、お父さんの焼酎を選ぶの、手伝ってくれない？", "reading": "つごうの いいときで いいから、おとうさんの しょうちゅうを えらぶの、てつだってくれない？", "meaning": "When convenient, could you help me choose shochu for your father?", "note": "The negative question 手伝ってくれない？ is a soft casual request." },
+          "zoom": { "context": "都合のいい時でいいから", "breakdown": "都合 means convenience/circumstances; front-loading it makes the request low pressure." }
+        },
+        {
+          "id": "social.fishing.meaning",
+          "skillId": "social.fishing",
+          "mode": "meaning",
+          "prompt": "釣りはどう？まだ行ってる？",
+          "instruction": "What topic are you opening?",
+          "options": [
+            { "id": "fishing", "label": "How's fishing—are you still going?", "correct": true },
+            { "id": "trip", "label": "How was the trip—have you arrived?", "correct": false },
+            { "id": "weather", "label": "Is the weather still good?", "correct": false }
+          ],
+          "answer": { "ja": "釣りはどう？まだ行ってる？", "reading": "つりは どう？まだ いってる？", "meaning": "How's fishing? Still going?", "note": "Warmer and more conversational than verifying a precise one-year period." }
+        },
+        {
+          "id": "social.synth_gift.meaning",
+          "skillId": "social.synth_gift",
+          "mode": "meaning",
+          "prompt": "面白いシンセがあって、よかったら一つあげるよ。",
+          "instruction": "What are you offering?",
+          "options": [
+            { "id": "gift", "label": "There is an interesting synth; if you like, I'll give you one.", "correct": true },
+            { "id": "borrow", "label": "May I borrow your interesting synth?", "correct": false },
+            { "id": "sell", "label": "I am selling one synth because it is too small.", "correct": false }
+          ],
+          "answer": { "ja": "面白いシンセがあって、よかったら一つあげるよ。", "reading": "おもしろい シンセが あって、よかったら ひとつ あげるよ。", "meaning": "There is an interesting synth; if you like, I'll give you one.", "note": "よかったら softens the offer. シンセ is the normal casual shortening." },
+          "zoom": { "context": "よかったら", "breakdown": "Literally “if it is good,” used as a soft “if you'd like.”" }
+        }
+      ]
+    },
+    {
+      "id": "sauna-tobacco",
+      "title": "Sauna + tobacco vocabulary",
+      "purpose": "Recognize three specialized terms from real conversation.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "vocab.totonou", "ja": "サウナでととのいました。", "meaning": "I reached the balanced sauna state." },
+        { "skillId": "vocab.menthol_crystal", "ja": "メントールの結晶をタバコに入れてるんだ。", "meaning": "I put menthol crystals in my cigarettes." },
+        { "skillId": "vocab.tobacco_tax", "ja": "マサチューセッツはたばこ税が重いんです。", "meaning": "The tobacco-tax burden is heavy in Massachusetts." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "vocab.totonou.focus",
+          "skillId": "vocab.totonou",
+          "mode": "focus",
+          "prompt": "ととのう",
+          "instruction": "Choose the sauna-specific meaning.",
+          "options": [
+            { "id": "balanced", "label": "To reach the relaxed, balanced post-sauna state.", "correct": true },
+            { "id": "overheat", "label": "To become dangerously overheated.", "correct": false },
+            { "id": "clean", "label": "To wash before entering the bath.", "correct": false }
+          ],
+          "answer": { "ja": "ととのう（整う）", "reading": "ととのう", "meaning": "Literally “be put in order”; in sauna culture, reach the balanced post-cycle state.", "note": "The slang sense does not make severe dizziness automatically safe; stop if symptoms concern you." },
+          "zoom": { "context": "サウナ → 水風呂 → 外気浴", "breakdown": "The ordinary verb 整う means to become orderly or balanced; sauna usage is often written in hiragana." }
+        },
+        {
+          "id": "vocab.menthol.focus",
+          "skillId": "vocab.menthol_crystal",
+          "mode": "focus",
+          "prompt": "メントールの結晶",
+          "instruction": "Choose the precise meaning.",
+          "options": [
+            { "id": "crystal", "label": "メントールのけっしょう — menthol crystals", "correct": true },
+            { "id": "cigarette", "label": "メンソールタバコ — menthol cigarettes", "correct": false },
+            { "id": "liquid", "label": "メントールのえきたい — liquid menthol", "correct": false }
+          ],
+          "answer": { "ja": "メントールの結晶", "reading": "メントールの けっしょう", "meaning": "Menthol crystals.", "note": "メントール is technical; メンソール is the everyday cigarette spelling." },
+          "zoom": { "context": "メントールの結晶をタバコに入れてるんだ。", "breakdown": "結晶 means a crystal or crystallized substance." }
+        },
+        {
+          "id": "vocab.tobacco_tax.focus",
+          "skillId": "vocab.tobacco_tax",
+          "mode": "focus",
+          "prompt": "たばこ税が重い",
+          "instruction": "Choose the natural interpretation.",
+          "options": [
+            { "id": "tax", "label": "The tobacco-tax burden is heavy.", "correct": true },
+            { "id": "weight", "label": "The tobacco itself is physically heavy.", "correct": false },
+            { "id": "smoke", "label": "The tobacco smoke is strong.", "correct": false }
+          ],
+          "answer": { "ja": "たばこ税が重い", "reading": "たばこぜいが おもい", "meaning": "The tobacco-tax burden is heavy.", "note": "税金 is general tax; noun + 税 names a specific tax." },
+          "zoom": { "context": "税負担が重い", "breakdown": "重い collocates with burden; 高い is the simpler everyday alternative." }
+        }
+      ]
+    },
+    {
+      "id": "school-work",
+      "title": "School + work conversation",
+      "purpose": "Recognize reusable patterns for respect, atmosphere, and changed attitudes.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "work.respect", "ja": "尊敬している数学の先生です。", "meaning": "It is a math teacher I look up to." },
+        { "skillId": "work.atmosphere", "ja": "学校の雰囲気が少し柔らかくなった気がします。", "meaning": "I feel the atmosphere at school has softened a little." },
+        { "skillId": "work.ai_reversal", "ja": "今年は同僚の先生たちがAIの使い方を聞いてくるようになりました。180度変わりましたね。", "meaning": "This year coworkers started asking how to use AI. It was a 180-degree change." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "work.respect.focus",
+          "skillId": "work.respect",
+          "mode": "focus",
+          "prompt": "尊敬している",
+          "instruction": "Choose the conversational meaning.",
+          "options": [
+            { "id": "respect", "label": "I respect / look up to them.", "correct": true },
+            { "id": "teach", "label": "They teach me mathematics.", "correct": false },
+            { "id": "worry", "label": "I am concerned about them.", "correct": false }
+          ],
+          "answer": { "ja": "尊敬している", "reading": "そんけいしている", "meaning": "Respect or look up to someone.", "note": "Standard and not overblown for a respected colleague." },
+          "zoom": { "context": "尊敬している数学の先生", "breakdown": "尊敬する is to respect; している makes it an ongoing attitude." }
+        },
+        {
+          "id": "work.atmosphere.meaning",
+          "skillId": "work.atmosphere",
+          "mode": "meaning",
+          "prompt": "学校の雰囲気が少し柔らかくなった気がします。",
+          "instruction": "What change does this describe?",
+          "options": [
+            { "id": "soft", "label": "I feel the atmosphere at school has softened a little.", "correct": true },
+            { "id": "quiet", "label": "I think the school became physically quieter.", "correct": false },
+            { "id": "easy", "label": "The schoolwork became much easier.", "correct": false }
+          ],
+          "answer": { "ja": "学校の雰囲気が少し柔らかくなった気がします。", "reading": "がっこうの ふんいきが すこし やわらかくなった きがします。", "meaning": "I feel the atmosphere at school has softened a little.", "note": "雰囲気 is atmosphere; 気がします makes it a personal impression." },
+          "zoom": { "context": "雰囲気が柔らかくなった", "breakdown": "柔らかい normally means soft; here it describes a less tense social climate." }
+        },
+        {
+          "id": "work.ai.meaning",
+          "skillId": "work.ai_reversal",
+          "mode": "meaning",
+          "prompt": "今年は同僚の先生たちがAIの使い方を聞いてくるようになりました。180度変わりましたね。",
+          "instruction": "What reversal is being described?",
+          "options": [
+            { "id": "ask", "label": "This year coworkers began asking me how to use AI—a complete change.", "correct": true },
+            { "id": "ban", "label": "This year coworkers completely banned AI use.", "correct": false },
+            { "id": "students", "label": "This year students began teaching coworkers AI.", "correct": false }
+          ],
+          "answer": { "ja": "今年は同僚の先生たちがAIの使い方を聞いてくるようになりました。180度変わりましたね。", "reading": "ことしは どうりょうの せんせいたちが AIの つかいかたを きいてくるように なりました。ひゃくはちじゅうど かわりましたね。", "meaning": "This year coworkers started asking me how to use AI. It was a 180-degree change.", "note": "〜ようになりました marks a change that has come to be normal." }
+        }
+      ]
+    },
+    {
+      "id": "rural-navigation",
+      "title": "Rural car navigation",
+      "purpose": "Read local address traps and operate a Japanese car navigation unit without storing private destinations.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "nav.phone_search", "ja": "電話番号検索はどこですか？", "meaning": "Where is phone-number search?" },
+        { "skillId": "nav.address_search", "ja": "丁は「てい」と読みます。丁目ではありません。", "meaning": "丁 is read tei. It is not chōme." },
+        { "skillId": "nav.saved_route", "ja": "登録地点から案内を始めます。", "meaning": "I will start guidance from the saved points." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "nav.tei.focus",
+          "skillId": "nav.tei_local",
+          "mode": "focus",
+          "priority": 1.3,
+          "prompt": "山浦丁",
+          "instruction": "Local reading trap: choose the correct branch.",
+          "options": [
+            { "id": "tei", "label": "やまうら てい — 丁 is a 甲/乙/丙/丁 subdivision", "correct": true },
+            { "id": "cho", "label": "やまうら ちょう — 丁 is a town suffix", "correct": false },
+            { "id": "chome", "label": "やまうら ちょうめ — 丁 means 丁目", "correct": false }
+          ],
+          "answer": { "ja": "山浦丁", "reading": "やまうら てい", "meaning": "Yamaura, subdivision tei.", "note": "In this Kashima address pattern, 丁 follows 甲・乙・丙・丁. A 丁目 branch is wrong." },
+          "zoom": { "context": "甲・乙・丙・丁（こう・おつ・へい・てい）", "breakdown": "These classical sequence markers can label rural subdivisions; 丁 is not an abbreviation for 丁目 here." }
+        },
+        {
+          "id": "nav.niiji.focus",
+          "skillId": "nav.niiji",
+          "mode": "focus",
+          "prompt": "尼寺",
+          "instruction": "Saga reading trap: choose the local reading.",
+          "options": [
+            { "id": "niiji", "label": "にいじ — the local place-name reading", "correct": true },
+            { "id": "amadera", "label": "あまでら — the ordinary word “nunnery”", "correct": false },
+            { "id": "niji", "label": "にじ — rainbow", "correct": false }
+          ],
+          "answer": { "ja": "尼寺", "reading": "にいじ", "meaning": "Niiji, a local place name in Saga.", "note": "Elsewhere the characters can read あまでら; the nav needs the local place reading." },
+          "zoom": { "context": "大和町大字尼寺", "breakdown": "Place-name readings can override the ordinary dictionary reading of the same kanji." }
+        },
+        {
+          "id": "nav.ooaza.focus",
+          "skillId": "nav.ooaza",
+          "mode": "focus",
+          "prompt": "大字",
+          "instruction": "Choose its reading and address function.",
+          "options": [
+            { "id": "ooaza", "label": "おおあざ — a rural administrative address unit", "correct": true },
+            { "id": "daiji", "label": "だいじ — something important", "correct": false },
+            { "id": "ookana", "label": "おおかな — large kana characters", "correct": false }
+          ],
+          "answer": { "ja": "大字", "reading": "おおあざ", "meaning": "A rural administrative unit retained in many addresses.", "note": "Some navigation listings omit 大字 while referring to the same place." },
+          "zoom": { "context": "大和町大字尼寺", "breakdown": "A holdover from older village divisions, roughly a greater section within a municipality." }
+        },
+        {
+          "id": "nav.memory.focus",
+          "skillId": "nav.memory_point",
+          "mode": "focus",
+          "prompt": "メモリ地点 / 登録地点",
+          "instruction": "What menu category is this?",
+          "options": [
+            { "id": "saved", "label": "Saved or registered destination points", "correct": true },
+            { "id": "recent", "label": "Recent traffic incidents", "correct": false },
+            { "id": "home", "label": "Only the factory-set home address", "correct": false }
+          ],
+          "answer": { "ja": "メモリ地点 / 登録地点", "reading": "メモリちてん / とうろくちてん", "meaning": "Memory points / registered points.", "note": "Different head units use either label for saved locations." },
+          "zoom": { "context": "目的地 → メモリ地点", "breakdown": "地点 is a point/location; 登録 means registration or saving." }
+        },
+        {
+          "id": "nav.vicinity.focus",
+          "skillId": "nav.vicinity",
+          "mode": "focus",
+          "prompt": "付近",
+          "instruction": "What does this suffix warn you about?",
+          "options": [
+            { "id": "near", "label": "ふきん — vicinity / near this place", "correct": true },
+            { "id": "closed", "label": "ふきゅう — the road is closed", "correct": false },
+            { "id": "exact", "label": "せいかく — exact entrance", "correct": false }
+          ],
+          "answer": { "ja": "付近", "reading": "ふきん", "meaning": "Vicinity / nearby.", "note": "A saved GPS point may display a nearby address label rather than a precise building name." },
+          "zoom": { "context": "佐賀県鹿島市山浦付近", "breakdown": "The label describes the map area's address; it does not necessarily mean the saved pin moved." }
+        },
+        {
+          "id": "nav.start.focus",
+          "skillId": "nav.start_guidance",
+          "mode": "focus",
+          "prompt": "ここへ行く → 案内開始",
+          "instruction": "What will this sequence do?",
+          "options": [
+            { "id": "start", "label": "Set this destination, then start route guidance.", "correct": true },
+            { "id": "save", "label": "Rename and save the current location.", "correct": false },
+            { "id": "stop", "label": "Stop and delete the current route.", "correct": false }
+          ],
+          "answer": { "ja": "ここへ行く → 案内開始", "reading": "ここへ いく → あんない かいし", "meaning": "Go here → start guidance.", "note": "Wording varies slightly, but 案内開始 is the decisive route-start action." },
+          "zoom": { "context": "案内開始", "breakdown": "案内 is guidance; 開始 is start/beginning." }
+        },
+        {
+          "id": "nav.phone.focus",
+          "skillId": "nav.phone_search",
+          "mode": "focus",
+          "prompt": "電話番号検索",
+          "instruction": "What search method is this?",
+          "options": [
+            { "id": "phone", "label": "でんわばんごうけんさく — phone-number search", "correct": true },
+            { "id": "facility", "label": "しせつめいけんさく — facility-name search", "correct": false },
+            { "id": "address", "label": "じゅうしょけんさく — address search", "correct": false }
+          ],
+          "answer": { "ja": "電話番号検索", "reading": "でんわばんごう けんさく", "meaning": "Phone-number search.", "note": "Useful when facility names do not appear in the district-name branch. Verify the matching organization before routing." },
+          "zoom": { "context": "電話番号 → 候補を確認 → 案内開始", "breakdown": "検索 means search; one number can return multiple affiliated organizations." }
+        },
+        {
+          "id": "nav.address.reply",
+          "skillId": "nav.address_search",
+          "mode": "reply",
+          "prompt": "住所に「山浦丁」とあります。どの読み方を選びますか？",
+          "instruction": "Choose the correct navigation response.",
+          "options": [
+            { "id": "tei", "label": "丁は「てい」です。丁目の枝には入りません。", "correct": true },
+            { "id": "chome", "label": "丁は「ちょうめ」です。丁目を選びます。", "correct": false },
+            { "id": "skip", "label": "丁は無視して、市だけを選びます。", "correct": false }
+          ],
+          "answer": { "ja": "丁は「てい」です。丁目の枝には入りません。", "reading": "ていです。ちょうめの えだには はいりません。", "meaning": "丁 is tei. Do not enter the chōme branch.", "note": "This composite skill unlocks only after 丁, 尼寺, and 大字 are recognized individually." }
+        },
+        {
+          "id": "nav.saved.reply",
+          "skillId": "nav.saved_route",
+          "mode": "reply",
+          "prompt": "保存した場所へ戻りたいです。次はどれ？",
+          "instruction": "Choose the safe menu sequence.",
+          "options": [
+            { "id": "saved", "label": "目的地 → メモリ地点 / 登録地点 → ここへ行く → 案内開始", "correct": true },
+            { "id": "delete", "label": "設定 → 登録地点 → 編集 → 削除", "correct": false },
+            { "id": "district", "label": "住所検索 → 市だけ選ぶ → 案内開始", "correct": false }
+          ],
+          "answer": { "ja": "目的地 → メモリ地点 / 登録地点 → ここへ行く → 案内開始", "reading": "もくてきち → メモリちてん / とうろくちてん → ここへいく → あんないかいし", "meaning": "Destination → saved points → go here → start guidance.", "note": "Confirm the pin visually before starting. This public card intentionally contains no private destination." }
         }
       ]
     }

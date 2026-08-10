@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { probabilityKnown } from "../src/mastery.js";
 import {
-  applyGrade,
+  applyObservation,
   isSkillUnlocked,
   routeMultiplier,
   selectNextItem
@@ -12,8 +12,8 @@ import { createInitialState } from "../src/store.js";
 
 const NOW = 1_700_000_000_000;
 const tree = {
-  readyThreshold: 0.6,
-  prior: { alpha: 1, beta: 1 },
+  readyThreshold: 0.55,
+  bkt: { pKnown: 0.3, pLearn: 0.12, pGuess: 0.25, pSlip: 0.1 },
   nodes: [
     { id: "root", label: "Root" },
     { id: "other", label: "Other root" },
@@ -21,25 +21,30 @@ const tree = {
   ],
   edges: [{ from: "root", to: "child" }]
 };
+const options = [
+  { id: "yes", correct: true },
+  { id: "no-1", correct: false },
+  { id: "no-2", correct: false }
+];
 const items = [
-  { id: "a-root", skillId: "root", scenarioId: "normal" },
-  { id: "b-other", skillId: "other", scenarioId: "urgent" },
-  { id: "c-child", skillId: "child", scenarioId: "normal" }
+  { id: "a-root", skillId: "root", scenarioId: "normal", options },
+  { id: "b-other", skillId: "other", scenarioId: "urgent", options },
+  { id: "c-child", skillId: "child", scenarioId: "normal", options }
 ];
 
-test("a prerequisite unlocks only after enough positive evidence", () => {
+test("one correct objective observation unlocks a direct prerequisite", () => {
   const initial = createInitialState(tree, NOW);
   assert.equal(isSkillUnlocked(tree, initial.skills, "child"), false);
 
-  const practiced = applyGrade(initial, items[0], "good", NOW);
-  assert.equal(probabilityKnown(practiced.skills.root), 2 / 3);
+  const practiced = applyObservation(initial, items[0], true, NOW);
+  assert.ok(probabilityKnown(practiced.skills.root) > tree.readyThreshold);
   assert.equal(isSkillUnlocked(tree, practiced.skills, "child"), true);
 });
 
-test("grading the selected card changes what comes next", () => {
+test("answering a card changes the next selection", () => {
   const initial = createInitialState(tree, NOW);
   const first = selectNextItem(items, tree, initial, NOW);
-  const practiced = applyGrade(initial, first, "good", NOW);
+  const practiced = applyObservation(initial, first, true, NOW);
   const next = selectNextItem(items, tree, practiced, NOW);
 
   assert.notEqual(next.id, first.id);
@@ -58,32 +63,25 @@ test("a near real event boosts its scenario", () => {
   assert.equal(selectNextItem(items, tree, routed, NOW).scenarioId, "urgent");
 });
 
-test("route urgency can outrank an ordinary due card", () => {
+test("route urgency can pull a not-yet-due card forward", () => {
   const initial = createInitialState(tree, NOW);
+  const practiced = applyObservation(initial, items[1], true, NOW);
   const routed = {
-    ...initial,
-    route: { scenarioId: "urgent", eventAt: NOW + 20 * 60 * 1000 },
-    skills: {
-      ...initial.skills,
-      other: {
-        ...initial.skills.other,
-        alpha: 2,
-        attempts: 1,
-        cramDue: NOW + 2 * 60 * 1000
-      }
-    }
+    ...practiced,
+    lastItemId: "a-root",
+    route: { scenarioId: "urgent", eventAt: NOW + 20 * 60 * 1000 }
   };
 
   assert.equal(selectNextItem(items, tree, routed, NOW).scenarioId, "urgent");
 });
 
-test("Again stays due and steps backward", () => {
+test("a miss stays due and steps backward", () => {
   let state = createInitialState(tree, NOW);
-  state = applyGrade(state, items[0], "good", NOW);
-  state = applyGrade(state, items[0], "good", NOW + 10);
+  state = applyObservation(state, items[0], true, NOW);
+  state = applyObservation(state, items[0], true, NOW + 10);
   assert.equal(state.skills.root.cramStep, 2);
 
-  state = applyGrade(state, items[0], "again", NOW + 20);
+  state = applyObservation(state, items[0], false, NOW + 20);
   assert.equal(state.skills.root.cramStep, 1);
   assert.equal(state.skills.root.cramDue, NOW + 20);
 });

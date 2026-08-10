@@ -1,6 +1,6 @@
-import { probabilityKnown, probabilityKnownForMode } from "./mastery.js";
+import { probabilityKnown } from "./mastery.js";
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
-import { applyGrade, flattenItems, selectNextItem } from "./scheduler.js";
+import { applyObservation, flattenItems, selectNextItem } from "./scheduler.js";
 import { clearState, createInitialState, loadState, saveState } from "./store.js";
 
 const dom = {
@@ -32,10 +32,14 @@ const dom = {
   reveal: document.querySelector("#reveal"),
   answer: document.querySelector("#answer"),
   japanese: document.querySelector("#japanese"),
+  reading: document.querySelector("#reading"),
   meaning: document.querySelector("#meaning"),
   note: document.querySelector("#note"),
+  wordZoom: document.querySelector("#word-zoom"),
+  zoomContext: document.querySelector("#zoom-context"),
+  zoomBreakdown: document.querySelector("#zoom-breakdown"),
   result: document.querySelector("#recognition-result"),
-  grades: document.querySelector("#grades"),
+  nextCard: document.querySelector("#next-card"),
   evidence: document.querySelector("#evidence"),
   roleplayStatus: document.querySelector("#roleplay-status"),
   roleplayScenario: document.querySelector("#roleplay-scenario"),
@@ -59,7 +63,7 @@ let tree;
 let items;
 let state;
 let currentItem;
-let revealed = false;
+let answered = false;
 let roleplayAvailable = false;
 let roleplayHistory = [];
 let pendingRoleplayResult = null;
@@ -215,16 +219,13 @@ async function sendRoleplayTurn() {
 
 function applyRoleplayObservations() {
   if (!pendingRoleplayResult) return;
-  const gradeForOutcome = { success: "good", partial: "hard", miss: "again" };
   let applied = 0;
   for (const observation of pendingRoleplayResult.observations) {
-    const grade = gradeForOutcome[observation.outcome];
-    if (!grade) continue;
-    state = applyGrade(state, {
+    if (observation.outcome === "not_tested") continue;
+    state = applyObservation(state, {
       id: `roleplay.${observation.skillId}.${Date.now()}`,
-      skillId: observation.skillId,
-      mode: "roleplay"
-    }, grade, Date.now() + applied);
+      skillId: observation.skillId
+    }, observation.outcome === "success", Date.now() + applied, { source: "roleplay" });
     applied += 1;
   }
 
@@ -280,32 +281,57 @@ function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
 }
 
-function revealAnswer(resultText = "") {
-  revealed = true;
+function showAnswer(resultText = "") {
+  answered = true;
   dom.answer.hidden = false;
-  dom.grades.hidden = false;
   dom.reveal.hidden = true;
+  dom.nextCard.hidden = false;
   dom.result.textContent = resultText;
 }
 
 function renderOptions(item) {
   dom.options.replaceChildren();
-  dom.options.hidden = item.mode !== "recognition";
-  if (item.mode !== "recognition") return;
 
   for (const option of item.options) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "option-button";
     button.textContent = option.label;
+    button.dataset.correct = String(option.correct);
     button.addEventListener("click", () => {
-      if (revealed) return;
-      for (const sibling of dom.options.children) sibling.disabled = true;
+      if (answered) return;
+      state = applyObservation(state, item, option.correct);
+      saveState(state);
+      for (const sibling of dom.options.children) {
+        sibling.disabled = true;
+        if (sibling.dataset.correct === "true") sibling.classList.add("correct");
+      }
       button.classList.add(option.correct ? "correct" : "incorrect");
-      revealAnswer(option.correct ? "Correct recognition." : "Not this one — use Again after checking the answer.");
+      showAnswer(option.correct ? "Correct — BKT updated." : "Not this one — BKT recorded a miss.");
+      renderEvidence();
+      renderProgress();
     });
     dom.options.append(button);
   }
+}
+
+function recordUnsure() {
+  if (answered) return;
+  state = applyObservation(state, currentItem, false);
+  saveState(state);
+  for (const button of dom.options.children) {
+    button.disabled = true;
+    if (button.dataset.correct === "true") button.classList.add("correct");
+  }
+  showAnswer("Shown as a miss — uncertainty is evidence too.");
+  renderEvidence();
+  renderProgress();
+}
+
+function renderEvidence() {
+  const skill = state.skills[currentItem.skillId];
+  const known = Math.round(probabilityKnown(skill) * 100);
+  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${skill.attempts} observations`;
 }
 
 function renderProgress() {
@@ -336,36 +362,36 @@ function renderCard() {
     throw new Error("No practice item is available. Check the skill DAG and content pack.");
   }
 
-  revealed = false;
+  answered = false;
   dom.answer.hidden = true;
-  dom.grades.hidden = true;
   dom.reveal.hidden = false;
+  dom.nextCard.hidden = true;
   dom.result.textContent = "";
   dom.scenario.textContent = currentItem.scenarioTitle;
-  dom.mode.textContent = currentItem.mode === "recognition" ? "Hear → react" : "Fixed line";
+  dom.mode.textContent = {
+    meaning: "Japanese → meaning",
+    reply: "Staff → reply",
+    focus: "Word zoom"
+  }[currentItem.mode] ?? "Recognition";
   dom.purpose.textContent = currentItem.scenarioPurpose;
   dom.prompt.textContent = currentItem.prompt;
-  dom.prompt.lang = currentItem.mode === "recognition" ? "ja" : "en";
-  dom.prompt.classList.toggle("japanese-prompt", currentItem.mode === "recognition");
-  dom.instruction.textContent = currentItem.instruction ?? "Say the fixed Japanese line, then reveal.";
+  dom.prompt.lang = "ja";
+  dom.prompt.classList.add("japanese-prompt");
+  dom.prompt.classList.toggle("focus-prompt", currentItem.mode === "focus");
+  dom.instruction.textContent = currentItem.instruction ?? "Choose the best answer.";
   dom.japanese.textContent = currentItem.answer.ja;
+  dom.reading.textContent = currentItem.answer.reading ?? "";
+  dom.reading.hidden = !currentItem.answer.reading
+    || currentItem.answer.reading === currentItem.answer.ja;
   dom.meaning.textContent = currentItem.answer.meaning;
   dom.note.textContent = currentItem.answer.note ?? "";
-  dom.reveal.textContent = currentItem.mode === "recognition" ? "Not sure — reveal" : "Reveal answer";
+  dom.wordZoom.hidden = !currentItem.zoom;
+  dom.zoomContext.textContent = currentItem.zoom?.context ?? "";
+  dom.zoomBreakdown.textContent = currentItem.zoom?.breakdown ?? "";
   renderOptions(currentItem);
-
-  const skill = state.skills[currentItem.skillId];
-  const modeLabel = currentItem.mode === "recognition" ? "recognition" : "fixed-line";
-  dom.evidence.textContent = `Overall evidence ${Math.round(probabilityKnown(skill) * 100)}% · ${modeLabel} ${Math.round(probabilityKnownForMode(skill, currentItem.mode) * 100)}% · ${skill.attempts} tries`;
+  renderEvidence();
   renderProgress();
   renderRoute();
-}
-
-function gradeCurrent(grade) {
-  state = applyGrade(state, currentItem, grade);
-  saveState(state);
-  showToast(`${grade[0].toUpperCase()}${grade.slice(1)} saved`);
-  renderCard();
 }
 
 function populateRouteScenarios() {
@@ -403,11 +429,8 @@ function bindEvents() {
     dom.roleplayObservation.hidden = true;
     showToast("Sensor observation discarded");
   });
-  dom.reveal.addEventListener("click", () => revealAnswer());
-  dom.grades.addEventListener("click", (event) => {
-    const grade = event.target.closest("button")?.dataset.grade;
-    if (grade) gradeCurrent(grade);
-  });
+  dom.reveal.addEventListener("click", recordUnsure);
+  dom.nextCard.addEventListener("click", renderCard);
   dom.routeApply.addEventListener("click", () => {
     const minutes = Number(dom.routeMinutes.value);
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
