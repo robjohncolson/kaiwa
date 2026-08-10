@@ -17,6 +17,7 @@ function newSkillState(tree, node, now) {
     incorrect: 0,
     observations: {
       card: { correct: 0, incorrect: 0 },
+      mission: { correct: 0, incorrect: 0 },
       roleplay: { correct: 0, incorrect: 0 },
       hint: { correct: 0, incorrect: 0 }
     },
@@ -30,13 +31,14 @@ function newSkillState(tree, node, now) {
 
 export function createInitialState(tree, now = Date.now()) {
   return {
-    version: 2,
+    version: 3,
     createdAt: now,
     updatedAt: now,
     totalReviews: 0,
     lastItemId: null,
     route: { scenarioId: null, eventAt: null },
     focus: { scenarioId: null, skillId: null, mode: null },
+    mission: { active: null, stats: {} },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
@@ -81,6 +83,7 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
     ...savedSkill,
     observations: {
       card: { ...initialSkill.observations.card, ...savedSkill.observations?.card },
+      mission: { ...initialSkill.observations.mission, ...savedSkill.observations?.mission },
       roleplay: { ...initialSkill.observations.roleplay, ...savedSkill.observations?.roleplay },
       hint: { ...initialSkill.observations.hint, ...savedSkill.observations?.hint }
     }
@@ -89,16 +92,20 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
   return {
     ...initial,
     ...candidate,
-    version: 2,
+    version: 3,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
+    mission: {
+      active: candidate.mission?.active ?? null,
+      stats: { ...initial.mission.stats, ...candidate.mission?.stats }
+    },
     skills: Object.fromEntries(tree.nodes.map((node) => [
       node.id,
       mergeSkill(candidate.skills[node.id], initial.skills[node.id], candidate.version)

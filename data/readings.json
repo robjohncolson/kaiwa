@@ -9,6 +9,7 @@
     { "id": "kimashita", "term": "来ました", "reading": "きました", "meaning": "came", "scenarioId": "shimamura-pickup" },
     { "id": "nyuka", "term": "入荷", "reading": "にゅうか", "meaning": "arrival of stock", "scenarioId": "shimamura-pickup", "skillId": "vocab.nyuka" },
     { "id": "onamae", "term": "お名前", "reading": "おなまえ", "meaning": "name, politely", "scenarioId": "name-prompt", "skillId": "identity.name_katakana" },
+    { "id": "kuwashiku", "term": "詳しく", "reading": "くわしく", "meaning": "in detail", "scenarioId": "shimamura-pickup" },
     { "id": "onegaishimasu", "term": "お願いします", "reading": "おねがいします", "meaning": "please / I request", "scenarioId": "hotel-refund" },
     { "id": "roppakubun", "term": "六泊分", "reading": "ろっぱくぶん", "meaning": "the amount for six nights", "scenarioId": "hotel-refund", "skillId": "vocab.roppakubun" },
     { "id": "nokotte", "term": "残って", "reading": "のこって", "meaning": "remaining", "scenarioId": "hotel-refund" },

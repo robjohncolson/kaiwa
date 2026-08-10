@@ -31,9 +31,18 @@ test("map statuses and practice targets follow the real prerequisite rule", () =
     skillId: "root",
     options: [{ correct: true }, { correct: false }, { correct: false }]
   }, true, NOW);
-  assert.equal(mapSkillStatus(tree, practiced, "root"), "ready");
-  assert.equal(mapSkillStatus(tree, practiced, "child"), "unseen");
-  assert.equal(practiceTargetFor(tree, practiced, "child"), "child");
+  assert.equal(mapSkillStatus(tree, practiced, "root"), "learning");
+  assert.equal(mapSkillStatus(tree, practiced, "child"), "locked");
+  assert.equal(practiceTargetFor(tree, practiced, "child"), "root");
+
+  const confirmed = applyObservation(practiced, {
+    id: "root-card-again",
+    skillId: "root",
+    options: [{ correct: true }, { correct: false }, { correct: false }]
+  }, true, NOW + 1);
+  assert.equal(mapSkillStatus(tree, confirmed, "root"), "ready");
+  assert.equal(mapSkillStatus(tree, confirmed, "child"), "unseen");
+  assert.equal(practiceTargetFor(tree, confirmed, "child"), "child");
 });
 
 test("island layout is deterministic and connects prerequisite edges", () => {

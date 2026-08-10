@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "missions": [
+    {
+      "id": "shimamura-loop",
+      "scenarioId": "shimamura-pickup",
+      "title": "Pick up the SXC-1",
+      "purpose": "State the pickup, answer the name prompt, then exit safely when the exchange opens up.",
+      "steps": [
+        {
+          "id": "state-purpose",
+          "kind": "staff",
+          "prompt": "いらっしゃいませ。",
+          "meaning": "Welcome. How can I help?",
+          "targetSkillId": "shimamura.pickup",
+          "choiceSkillIds": ["shimamura.pickup", "shimamura.stock_check", "abort.wakarimasen"]
+        },
+        {
+          "id": "answer-name",
+          "kind": "staff",
+          "prompt": "お名前は？",
+          "meaning": "Your name?",
+          "targetSkillId": "identity.name_katakana",
+          "choiceSkillIds": ["identity.name_katakana", "shimamura.pickup", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "もう少し詳しくお願いします。",
+          "meaning": "Please explain in a little more detail.",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["shimamura.stock_check", "shimamura.pickup", "abort.wakarimasen"]
+        }
+      ]
+    },
+    {
+      "id": "hotel-refund-loop",
+      "scenarioId": "hotel-refund",
+      "title": "Check out and ask for a refund",
+      "purpose": "Check out, ask about the six unused nights, then abort an open-ended follow-up.",
+      "steps": [
+        {
+          "id": "request-checkout",
+          "kind": "staff",
+          "prompt": "いらっしゃいませ。",
+          "meaning": "Welcome. How can I help?",
+          "targetSkillId": "hotel.checkout",
+          "choiceSkillIds": ["hotel.checkout", "hotel.refund_six_nights", "abort.wakarimasen"]
+        },
+        {
+          "id": "request-refund",
+          "kind": "staff",
+          "prompt": "ほかに何かありますか？",
+          "meaning": "Is there anything else?",
+          "targetSkillId": "hotel.refund_six_nights",
+          "choiceSkillIds": ["hotel.refund_six_nights", "hotel.checkout", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "もう少し詳しくお願いします。",
+          "meaning": "Please explain in a little more detail.",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["hotel.refund_six_nights", "hotel.checkout", "abort.wakarimasen"]
+        }
+      ]
+    },
+    {
+      "id": "family-dinner-loop",
+      "scenarioId": "family-social",
+      "title": "Arrive, eat, and thank the host",
+      "purpose": "Use the fixed dinner sequence, then recover from an open question without improvising.",
+      "steps": [
+        {
+          "id": "arrive",
+          "kind": "staff",
+          "prompt": "こんばんは。",
+          "meaning": "Good evening.",
+          "targetSkillId": "family.greeting",
+          "choiceSkillIds": ["family.greeting", "family.thanks_hosting", "abort.wakarimasen"]
+        },
+        {
+          "id": "start-meal",
+          "kind": "staff",
+          "prompt": "どうぞ。",
+          "meaning": "Please, go ahead.",
+          "targetSkillId": "family.itadakimasu",
+          "choiceSkillIds": ["family.itadakimasu", "family.greeting", "abort.wakarimasen"]
+        },
+        {
+          "id": "thank-host",
+          "kind": "staff",
+          "prompt": "ありがとうございました。",
+          "meaning": "Thank you very much.",
+          "targetSkillId": "family.thanks_hosting",
+          "choiceSkillIds": ["family.thanks_hosting", "family.itadakimasu", "abort.wakarimasen"]
+        },
+        {
+          "id": "abort-open-question",
+          "kind": "off_script",
+          "prompt": "さいきんはどうですか？",
+          "meaning": "How have things been lately?",
+          "targetSkillId": "abort.wakarimasen",
+          "choiceSkillIds": ["social.fishing", "family.thanks_hosting", "abort.wakarimasen"]
+        }
+      ]
+    }
+  ]
+}

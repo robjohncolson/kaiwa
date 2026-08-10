@@ -1,4 +1,4 @@
-import { observeBkt, probabilityKnown } from "./mastery.js";
+import { observeBkt, probabilityKnown, skillIsReady } from "./mastery.js";
 import { createReadingItems } from "./readings.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
@@ -29,7 +29,7 @@ export function prerequisitesFor(tree, skillId) {
 export function isSkillUnlocked(tree, skills, skillId) {
   return prerequisitesFor(tree, skillId).every((parentId) => {
     const parent = skills[parentId];
-    return parent && probabilityKnown(parent) >= tree.readyThreshold;
+    return parent && skillIsReady(tree, parent);
   });
 }
 
@@ -114,7 +114,7 @@ export function applyObservation(
   item,
   correct,
   now = Date.now(),
-  { source = "card" } = {}
+  { source = "card", guessProbability } = {}
 ) {
   const currentSkill = state.skills[item.skillId];
   if (!currentSkill) throw new TypeError(`Missing skill state: ${item.skillId}`);
@@ -122,7 +122,8 @@ export function applyObservation(
   const optionCount = item.options?.length;
   const observed = observeBkt(currentSkill, correct, now, {
     source,
-    guessProbability: source === "card" && optionCount > 1 ? 1 / optionCount : 0.05
+    guessProbability: guessProbability
+      ?? (["card", "mission"].includes(source) && optionCount > 1 ? 1 / optionCount : 0.05)
   });
   let cramStep = currentSkill.cramStep;
   let cramDue = now;
