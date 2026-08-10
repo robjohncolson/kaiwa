@@ -43,13 +43,17 @@ function learnerSurfaces(content) {
 }
 
 test("every learner-facing kanji is covered by context-specific ruby data", async () => {
-  const [content, readings] = await Promise.all([
+  const [content, tree, readings] = await Promise.all([
     readJson("../data/scenarios.json"),
+    readJson("../data/tree.json"),
     readJson("../data/readings.json")
   ]);
 
   for (const [label, value] of learnerSurfaces(content)) {
     assert.equal(uncoveredKanji(value, readings), "", `${label} has unannotated kanji: ${value}`);
+  }
+  for (const node of tree.nodes) {
+    assert.equal(uncoveredKanji(node.label, readings), "", `${node.id} map label has unannotated kanji: ${node.label}`);
   }
 });
 

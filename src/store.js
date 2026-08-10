@@ -36,6 +36,7 @@ export function createInitialState(tree, now = Date.now()) {
     totalReviews: 0,
     lastItemId: null,
     route: { scenarioId: null, eventAt: null },
+    focus: { scenarioId: null, skillId: null, mode: null },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
@@ -97,6 +98,7 @@ function mergeWithCurrentTree(candidate, tree, now) {
     ...candidate,
     version: 2,
     route: { ...initial.route, ...candidate.route },
+    focus: { ...initial.focus, ...candidate.focus },
     skills: Object.fromEntries(tree.nodes.map((node) => [
       node.id,
       mergeSkill(candidate.skills[node.id], initial.skills[node.id], candidate.version)

@@ -24,6 +24,7 @@ test("BKT state round-trips through browser-like storage", () => {
   original.skills.one.attempts = 3;
   original.skills.one.pKnown = 0.72;
   original.totalReviews = 3;
+  original.focus = { scenarioId: "family", skillId: "one", mode: null };
 
   saveState(original, storage);
   const loaded = loadState(tree, storage, 200);
@@ -34,6 +35,7 @@ test("BKT state round-trips through browser-like storage", () => {
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
   assert.deepEqual(loaded.skills.one.observations.hint, { correct: 0, incorrect: 0 });
+  assert.deepEqual(loaded.focus, original.focus);
 });
 
 test("v1 Beta state migrates without discarding attempts or cram timing", () => {
@@ -67,6 +69,7 @@ test("v1 Beta state migrates without discarding attempts or cram timing", () => 
   assert.equal(loaded.skills.one.attempts, 4);
   assert.equal(loaded.skills.one.cramDue, 500);
   assert.deepEqual(loaded.skills.one.observations.card, { correct: 2, incorrect: 2 });
+  assert.deepEqual(loaded.focus, { scenarioId: null, skillId: null, mode: null });
 });
 
 test("new tree nodes are merged into saved state", () => {

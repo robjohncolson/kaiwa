@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { probabilityKnown } from "../src/mastery.js";
 import {
   applyObservation,
+  focusCandidates,
   isSkillUnlocked,
   routeMultiplier,
   selectNextItem
@@ -73,6 +74,32 @@ test("route urgency can pull a not-yet-due card forward", () => {
   };
 
   assert.equal(selectNextItem(items, tree, routed, NOW).scenarioId, "urgent");
+});
+
+test("an exact skill focus overrides ordinary due and route ordering", () => {
+  const initial = createInitialState(tree, NOW);
+  const focused = {
+    ...initial,
+    route: { scenarioId: "urgent", eventAt: NOW + 20 * 60 * 1000 },
+    focus: { scenarioId: "normal", skillId: "root", mode: null }
+  };
+
+  assert.deepEqual(focusCandidates(items, tree, focused).map((item) => item.id), ["a-root"]);
+  assert.equal(selectNextItem(items, tree, focused, NOW).skillId, "root");
+});
+
+test("scenario reading focus excludes phrase cards and persists between reviews", () => {
+  const reading = { id: "reading", skillId: "other", scenarioId: "urgent", mode: "reading", options };
+  const initial = createInitialState(tree, NOW);
+  const focused = {
+    ...initial,
+    focus: { scenarioId: "urgent", skillId: null, mode: "reading" }
+  };
+  const focusedItems = focusCandidates([...items, reading], tree, focused);
+
+  assert.deepEqual(focusedItems.map((item) => item.id), ["reading"]);
+  const practiced = applyObservation(focused, reading, true, NOW);
+  assert.deepEqual(practiced.focus, focused.focus);
 });
 
 test("a miss stays due and steps backward", () => {

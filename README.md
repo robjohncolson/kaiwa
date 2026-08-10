@@ -1,6 +1,6 @@
 # Kaiwa
 
-Phone-first Japanese trip practice. Every offline card starts with Japanese and asks for its meaning, the correct fixed reply, or a kanji reading. Every learner-facing kanji has contextual ruby data and an independently tested reading skill. A prerequisite DAG and fixed-parameter BKT choose the next skill; optional HTTP roleplay is a reviewed sensor, never the mastery authority.
+Phone-first Japanese trip practice. Every offline card starts with Japanese and asks for its meaning, the correct fixed reply, or a kanji reading. Every learner-facing kanji has contextual ruby data and an independently tested reading skill. A prerequisite DAG and fixed-parameter BKT choose the next skill; its phone-sized SVG map explains that choice and can focus practice on a skill, scenario, or scenario's readings. Optional HTTP roleplay is a reviewed sensor, never the mastery authority.
 
 Live: [GitHub Pages](https://robjohncolson.github.io/kaiwa/) · [Vercel](https://kaiwa-nine.vercel.app/)
 
@@ -16,7 +16,7 @@ The share card at the bottom of the app contains an offline-cached QR code for t
 
 ## State and content
 
-Progress stays in this browser's `localStorage` at `kaiwa.practice-state.v1`. State schema v2 stores per-skill `pKnown`, fixed `pLearn/pGuess/pSlip`, correct/missed counts, source counts, a 2m → 10m → 30m → 2h cram step, and an inactive `longDue`. Old state migrates automatically. New or weak words show furigana on phrase cards. Reading cards hide it. At 75% reading BKT the ruby retires; requesting it again records a reading miss and restores the aid. Phrase success never inflates the readings inside it.
+Progress stays in this browser's `localStorage` at `kaiwa.practice-state.v1`. State schema v2 stores per-skill `pKnown`, fixed `pLearn/pGuess/pSlip`, correct/missed counts, source counts, a 2m → 10m → 30m → 2h cram step, an inactive `longDue`, and the selected map focus. Old state migrates automatically. New or weak words show furigana on phrase cards and the map. Reading cards hide it. At 75% reading BKT the ruby retires everywhere; requesting it again records a reading miss and restores the aid. Phrase success never inflates the readings inside it.
 
 To add a scenario, add its closed-loop lines and Japanese-first items in `data/scenarios.json`, then add phrase skills and prerequisite edges in `data/tree.json`. Add each kanji-bearing word with its contextual reading to `data/readings.json`; reading cards and BKT nodes are generated automatically. Tests reject unannotated learner-facing kanji, missing reading cards, invalid choices, and graph cycles.
 
@@ -32,4 +32,4 @@ Set all three server-side variables to enable the collapsed roleplay panel:
 
 Optional `KAIWA_HOST` and `KAIWA_PORT` default to `127.0.0.1` and `4173`. The proxy requests structured JSON, validates scenario skill IDs locally, exposes observations for review, and changes BKT only after **Apply tested outcomes**. Provider failure never blocks offline practice.
 
-Core paths: `data/`, `src/readings.js`, `src/mastery.js`, `src/scheduler.js`, `src/store.js`, `src/ui.js`, and `server/roleplay.js`.
+Core paths: `data/`, `src/readings.js`, `src/mastery.js`, `src/scheduler.js`, `src/map.js`, `src/store.js`, `src/ui.js`, and `server/roleplay.js`.
