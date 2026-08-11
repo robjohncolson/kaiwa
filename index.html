@@ -3,372 +3,41 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#15211b">
+    <meta name="theme-color" content="#14251d">
     <title>Kaiwa — trip drill</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <main class="shell">
-      <header class="site-header">
+    <main class="wizard-shell">
+      <header class="wizard-header">
         <div>
           <p class="eyebrow">KAIWA · TRIP LOOP</p>
-          <h1>Practice the next exchange.</h1>
+          <h1 id="app-title">One decision at a time.</h1>
         </div>
-        <span class="offline-badge">Offline-first</span>
+        <span id="offline-badge" class="offline-badge">Offline</span>
       </header>
 
+      <div class="journey-rail" aria-hidden="true">
+        <span id="journey-fill"></span>
+      </div>
+      <p id="wizard-context" class="wizard-context">Preparing your next exchange…</p>
       <p id="placeholder-warning" class="warning" hidden></p>
       <p id="loading" class="loading">Loading practice pack…</p>
       <p id="error" class="error" hidden></p>
 
-      <div id="practice-app" hidden>
-        <nav class="quick-actions" aria-label="Conversation safety tools">
-          <button id="sheet-open" type="button" class="sheet-button">Show phone sheet</button>
-          <button id="abort-open" type="button" class="abort-button">Need out? Show abort</button>
-        </nav>
+      <section id="wizard-screen" class="wizard-screen" aria-live="polite" hidden></section>
 
-        <details class="route-panel">
-          <summary>Next real event</summary>
-          <p id="route-summary" class="route-summary"></p>
-          <div class="route-controls">
-            <label>
-              Scenario
-              <select id="route-scenario"></select>
-            </label>
-            <label>
-              Minutes away
-              <input id="route-minutes" inputmode="numeric" type="number" min="1" max="1440" value="30">
-            </label>
-          </div>
-          <div class="route-actions">
-            <button id="route-apply" type="button" class="small-button">Boost this route</button>
-            <button id="route-clear" type="button" class="text-button">Clear</button>
-          </div>
-        </details>
+      <nav id="wizard-actions" class="wizard-actions" aria-label="Current step actions" hidden>
+        <button id="action-secondary" type="button" class="wizard-action wizard-action-secondary" hidden></button>
+        <button id="action-primary" type="button" class="wizard-action wizard-action-primary" hidden></button>
+      </nav>
 
-        <details class="field-panel">
-          <summary>After a real conversation</summary>
-          <p class="field-help">Log what actually happened. This changes practice priority, never BKT mastery.</p>
-          <label class="field-picker">
-            Scenario
-            <select id="field-scenario"></select>
-          </label>
-          <div class="field-outcomes" aria-label="Real conversation result">
-            <button type="button" data-field-outcome="worked">Worked</button>
-            <button type="button" data-field-outcome="phone_sheet">Used phone sheet</button>
-            <button type="button" data-field-outcome="aborted">Aborted safely</button>
-            <button type="button" data-field-outcome="failed">Failed</button>
-          </div>
-          <p id="field-summary" class="field-summary"></p>
-        </details>
-
-        <section id="repair-launcher" class="repair-launcher" aria-labelledby="repair-launch-title" hidden>
-          <div>
-            <p class="eyebrow">FIELD REPAIR</p>
-            <h2 id="repair-launch-title">Repair the conversation.</h2>
-            <p id="repair-summary" class="repair-summary"></p>
-          </div>
-          <button id="repair-open" type="button" class="repair-open-button">Start repair</button>
-        </section>
-
-        <div class="progress-row">
-          <p id="progress" class="progress"></p>
-          <button id="map-open" type="button" class="map-button">Skill map</button>
-        </div>
-        <div id="focus-banner" class="focus-banner" hidden>
-          <p id="focus-summary"></p>
-          <button id="focus-clear" type="button" class="text-button">Clear focus</button>
-        </div>
-
-        <section class="session-launcher" aria-labelledby="session-launch-title">
-          <div>
-            <p class="eyebrow">FIVE-MINUTE TRIP SESSION</p>
-            <h2 id="session-launch-title">Recognize, read, then speak the exchange.</h2>
-            <p id="session-summary" class="session-summary"></p>
-          </div>
-          <button id="session-open" type="button" class="session-open-button">Start session</button>
-        </section>
-
-        <section class="mission-launcher" aria-labelledby="mission-launch-title">
-          <div>
-            <p class="eyebrow">OFFLINE CLOSED LOOP</p>
-            <h2 id="mission-launch-title">Run the whole exchange.</h2>
-            <p id="mission-summary" class="mission-summary"></p>
-          </div>
-          <button id="mission-open" type="button" class="mission-open-button">Open missions</button>
-        </section>
-
-        <article class="card" aria-live="polite">
-          <div class="card-meta">
-            <span id="scenario"></span>
-            <span id="mode" class="mode-badge"></span>
-          </div>
-          <p id="purpose" class="purpose"></p>
-          <h2 id="prompt" class="prompt"></h2>
-          <p id="instruction" class="instruction"></p>
-          <div class="furigana-controls">
-            <p id="furigana-status" class="furigana-status"></p>
-            <button id="furigana-help" type="button" class="text-button" hidden>Show furigana</button>
-          </div>
-
-          <div id="options" class="options"></div>
-          <button id="reveal" type="button" class="text-button unsure-button">Not sure — show answer</button>
-
-          <section id="answer" class="answer" hidden>
-            <p id="recognition-result" class="recognition-result" aria-live="polite"></p>
-            <p id="japanese" class="japanese" lang="ja"></p>
-            <p id="reading" class="reading" lang="ja"></p>
-            <p id="meaning" class="meaning"></p>
-            <p id="note" class="note"></p>
-            <aside id="word-zoom" class="word-zoom" hidden>
-              <p class="zoom-label">WORD ZOOM</p>
-              <p id="zoom-context" class="zoom-context" lang="ja"></p>
-              <p id="zoom-breakdown" class="zoom-breakdown"></p>
-            </aside>
-          </section>
-
-          <button id="next-card" type="button" class="reveal-button" hidden>Next card</button>
-
-          <p id="evidence" class="evidence"></p>
-        </article>
-
-        <details id="roleplay-panel" class="roleplay-panel">
-          <summary>
-            <span>Optional routed roleplay</span>
-            <span id="roleplay-status" class="roleplay-status">Checking…</span>
-          </summary>
-          <div class="roleplay-body">
-            <p class="roleplay-privacy">Only this panel uses the network. Typed practice text is sent through the local proxy to the configured provider; the API key stays server-side.</p>
-            <div class="roleplay-controls">
-              <label>
-                Scenario
-                <select id="roleplay-scenario"></select>
-              </label>
-              <button id="roleplay-reset" type="button" class="text-button">Restart exchange</button>
-            </div>
-            <div id="roleplay-transcript" class="transcript" aria-live="polite"></div>
-            <p class="chip-label">Tap a fixed line or type your own attempt:</p>
-            <div id="roleplay-lines" class="line-chips"></div>
-            <label class="roleplay-input-label" for="roleplay-input">Your Japanese</label>
-            <textarea id="roleplay-input" rows="3" maxlength="500" placeholder="Type Japanese…"></textarea>
-            <button id="roleplay-send" type="button" class="reveal-button">Send practice turn</button>
-            <p id="roleplay-error" class="roleplay-error" hidden></p>
-            <section id="roleplay-observation" class="observation" hidden>
-              <h3>Sensor observation</h3>
-              <p id="roleplay-guidance" class="roleplay-guidance"></p>
-              <ul id="roleplay-outcomes"></ul>
-              <p>Review this before it changes local evidence.</p>
-              <div class="observation-actions">
-                <button id="roleplay-apply" type="button" class="small-button">Apply tested outcomes</button>
-                <button id="roleplay-discard" type="button" class="text-button">Discard</button>
-              </div>
-            </section>
-          </div>
-        </details>
-
-        <aside id="kaiwa-share" class="share-card" aria-labelledby="kaiwa-share-title">
-          <p class="eyebrow">SHARE THE TRIP LOOP</p>
-          <h2 id="kaiwa-share-title">Open Kaiwa on your phone</h2>
-          <p class="share-hint">Scan with the phone camera.</p>
-          <a class="share-qr-link" href="https://kaiwa-nine.vercel.app/" target="_blank" rel="noopener noreferrer">
-            <img id="kaiwa-share-qr" class="share-qr" src="./qr-kaiwa.svg" width="180" height="180" decoding="async" alt="QR code linking to the Kaiwa trip Japanese practice app">
-          </a>
-          <p class="share-url"><a href="https://kaiwa-nine.vercel.app/" target="_blank" rel="noopener noreferrer">kaiwa-nine.vercel.app</a></p>
-        </aside>
-
-        <footer>
-          <details class="progress-tools">
-            <summary>Progress backup</summary>
-            <p>Download this device's practice state, or restore it on another browser. No network is used.</p>
-            <div class="progress-tool-actions">
-              <button id="progress-export" type="button" class="small-button">Download progress</button>
-              <button id="progress-import-open" type="button" class="text-button">Restore backup</button>
-              <input id="progress-import" type="file" accept="application/json,.json" hidden>
-            </div>
-          </details>
-          <button id="reset" type="button" class="text-button reset-button">Reset local progress</button>
-        </footer>
-      </div>
+      <input id="progress-import" type="file" accept="application/json,.json" hidden>
+      <div id="toast" class="toast" role="status"></div>
     </main>
 
-    <dialog id="phone-sheet" class="sheet-dialog">
-      <div class="dialog-header">
-        <div>
-          <p class="eyebrow">LIVE CONVERSATION</p>
-          <h2>Only use these lines.</h2>
-        </div>
-        <button type="button" class="dialog-close" data-close-dialog="phone-sheet" aria-label="Close phone sheet">×</button>
-      </div>
-      <label class="sheet-picker">
-        Scenario
-        <select id="sheet-scenario"></select>
-      </label>
-      <p id="sheet-purpose" class="sheet-purpose"></p>
-      <div id="sheet-lines" class="sheet-lines"></div>
-      <button type="button" class="reveal-button" data-close-dialog="phone-sheet">Back to practice</button>
-    </dialog>
-
-    <dialog id="abort-dialog" class="abort-dialog">
-      <p class="eyebrow">POLITE EXIT</p>
-      <p id="abort-japanese" class="abort-japanese" lang="ja"></p>
-      <p id="abort-meaning" class="abort-meaning"></p>
-      <p class="abort-instruction">Say it once, then show this screen.</p>
-      <button type="button" class="abort-close" data-close-dialog="abort-dialog">Close</button>
-    </dialog>
-
-    <dialog id="skill-map-dialog" class="map-dialog">
-      <div class="dialog-header map-dialog-header">
-        <div>
-          <p class="eyebrow">YOUR TRIP LANGUAGE</p>
-          <h2>Skill map</h2>
-        </div>
-        <button type="button" class="dialog-close" data-close-dialog="skill-map-dialog" aria-label="Close skill map">×</button>
-      </div>
-      <p id="map-next" class="map-next"></p>
-      <div class="map-toolbar">
-        <div class="map-legend" aria-label="Skill status legend">
-          <span data-status="locked">Locked</span>
-          <span data-status="unseen">Unseen</span>
-          <span data-status="learning">Learning</span>
-          <span data-status="ready">Ready</span>
-        </div>
-        <button id="map-clear-focus" type="button" class="text-button">Clear practice focus</button>
-      </div>
-      <aside id="map-detail" class="map-detail" hidden></aside>
-      <div id="map-islands" class="map-islands"></div>
-      <button type="button" class="reveal-button map-done" data-close-dialog="skill-map-dialog">Back to practice</button>
-    </dialog>
-
-    <dialog id="session-dialog" class="session-dialog">
-      <div class="dialog-header session-dialog-header">
-        <div>
-          <p class="eyebrow">GUIDED TRIP SESSION</p>
-          <h2 id="session-title">About five minutes.</h2>
-        </div>
-        <button type="button" class="dialog-close" data-close-dialog="session-dialog" aria-label="Close guided session">×</button>
-      </div>
-
-      <section id="session-setup" class="session-setup">
-        <p>Six scheduler-selected cards: three weak recognition prompts, three difficult readings without furigana, then one speak-first offline mission.</p>
-        <p id="session-plan" class="session-plan"></p>
-        <button id="session-start" type="button" class="reveal-button">Start five-minute session</button>
-      </section>
-
-      <section id="session-active" class="session-active" hidden>
-        <p id="session-progress" class="session-progress"></p>
-        <ol class="session-stages">
-          <li id="session-stage-phrases">Three weak phrases</li>
-          <li id="session-stage-readings">Three no-furigana readings</li>
-          <li id="session-stage-mission">One speak-first mission</li>
-        </ol>
-        <button id="session-continue" type="button" class="reveal-button">Continue session</button>
-        <button id="session-end" type="button" class="text-button session-end">End session; keep recorded progress</button>
-      </section>
-
-      <section id="session-complete" class="session-complete" hidden>
-        <p id="session-outcome" class="session-outcome">Session complete</p>
-        <h3 id="session-complete-title">Trip practice complete.</h3>
-        <p id="session-complete-metrics"></p>
-        <ul id="session-results" class="session-results"></ul>
-        <button id="session-again" type="button" class="reveal-button">Build another session</button>
-        <button type="button" class="text-button session-done" data-close-dialog="session-dialog">Done</button>
-      </section>
-    </dialog>
-
-    <dialog id="repair-dialog" class="repair-dialog">
-      <div class="dialog-header repair-dialog-header">
-        <div>
-          <p class="eyebrow">FIELD REPAIR</p>
-          <h2 id="repair-title">Repair the conversation.</h2>
-        </div>
-        <button type="button" class="dialog-close" data-close-dialog="repair-dialog" aria-label="Close field repair">×</button>
-      </div>
-      <p id="repair-status" class="repair-status"></p>
-      <ol class="session-stages repair-stages">
-        <li id="repair-stage-recognition">Recognize the partner prompt</li>
-        <li id="repair-stage-reading">Read one difficult word without furigana</li>
-        <li id="repair-stage-production">Say the weakest fixed response</li>
-        <li id="repair-stage-abort">Recover with the timed abort</li>
-        <li id="repair-stage-revisit">Revisit both spoken lines after ten minutes</li>
-      </ol>
-      <button id="repair-action" type="button" class="reveal-button">Start repair</button>
-      <button id="repair-end" type="button" class="text-button repair-end" hidden>End repair; keep recorded evidence</button>
-    </dialog>
-
-    <dialog id="mission-dialog" class="mission-dialog">
-      <div class="dialog-header mission-dialog-header">
-        <div>
-          <p class="eyebrow">OFFLINE MISSION</p>
-          <h2 id="mission-title">Closed-loop practice</h2>
-        </div>
-        <button type="button" class="dialog-close" data-close-dialog="mission-dialog" aria-label="Close mission">×</button>
-      </div>
-
-      <section id="mission-setup" class="mission-setup">
-        <label class="mission-picker">
-          Mission
-          <select id="mission-select"></select>
-        </label>
-        <label class="mission-picker mission-mode-picker">
-          Practice mode
-          <select id="mission-mode">
-            <option value="production">Speak first</option>
-            <option value="recognition">Choose the response</option>
-          </select>
-        </label>
-        <p id="mission-purpose" class="mission-purpose"></p>
-        <p id="mission-history" class="mission-history"></p>
-        <label class="mission-challenge">
-          <input id="mission-challenge" type="checkbox">
-          <span><strong>Challenge run</strong> — hide furigana and English choice meanings.</span>
-        </label>
-        <button id="mission-start" type="button" class="reveal-button">Start mission</button>
-      </section>
-
-      <section id="mission-run" class="mission-run" hidden>
-        <div class="mission-run-meta">
-          <span id="mission-progress"></span>
-          <span id="mission-kind" class="mode-badge"></span>
-        </div>
-        <p id="mission-instruction" class="mission-instruction"></p>
-        <p id="mission-prompt" class="mission-prompt" lang="ja"></p>
-        <p id="mission-furigana-status" class="furigana-status"></p>
-        <p id="mission-prompt-meaning" class="mission-prompt-meaning" hidden></p>
-        <button id="mission-hint" type="button" class="text-button mission-hint">Need help — show meaning</button>
-        <p id="mission-timer" class="mission-timer" hidden></p>
-        <button id="mission-production-reveal" type="button" class="production-reveal" hidden>I answered aloud — reveal fixed line</button>
-        <div id="mission-options" class="mission-options"></div>
-        <section id="mission-feedback" class="mission-feedback" hidden>
-          <p id="mission-feedback-title" class="mission-feedback-title"></p>
-          <p id="mission-correct-line" class="mission-correct-line" lang="ja"></p>
-          <p id="mission-correct-meaning" class="mission-correct-meaning"></p>
-          <div id="mission-production-grades" class="production-grades" hidden>
-            <button type="button" data-production-grade="miss">Miss</button>
-            <button type="button" data-production-grade="help">Needed help</button>
-            <button type="button" data-production-grade="clean">Said cleanly</button>
-          </div>
-          <button id="mission-advance" type="button" class="reveal-button">Continue mission</button>
-        </section>
-        <button id="mission-end" type="button" class="text-button mission-end">End run; keep recorded evidence</button>
-      </section>
-
-      <section id="mission-complete" class="mission-complete" hidden>
-        <p id="mission-outcome" class="mission-outcome"></p>
-        <h3 id="mission-complete-title"></h3>
-        <p id="mission-complete-summary"></p>
-        <ul id="mission-skill-results" class="mission-skill-results"></ul>
-        <p id="mission-complete-metrics" class="mission-complete-metrics"></p>
-        <button id="mission-practice-weakest" type="button" class="reveal-button">Practice weakest skill next</button>
-        <div class="mission-complete-actions">
-          <button id="mission-again" type="button" class="small-button">Run it again</button>
-          <button type="button" class="text-button" data-close-dialog="mission-dialog">Back to cards</button>
-        </div>
-      </section>
-    </dialog>
-
-    <div id="toast" class="toast" role="status"></div>
     <script type="module" src="./src/ui.js"></script>
   </body>
 </html>
