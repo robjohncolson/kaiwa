@@ -28,7 +28,8 @@ test("manifest assets exist and the offline shell covers browser dependencies", 
     "src/scheduler.js",
     "src/session.js",
     "src/store.js",
-    "src/ui.js"
+    "src/ui.js",
+    "src/wizard.js"
   ];
 
   assert.equal(manifest.display, "standalone");

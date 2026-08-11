@@ -1,5 +1,4 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
-import { buildSkillMap, practiceTargetFor } from "./map.js";
 import {
   advanceMissionRun,
   answerMissionStep,
@@ -8,8 +7,8 @@ import {
   missionById,
   missionLineIndex,
   recordMissionCompletion,
-  revealProductionAnswer,
   revealMissionHint,
+  revealProductionAnswer,
   validateMissionPack
 } from "./mission.js";
 import { fieldCounts, latestFieldOutcome, recordFieldOutcome } from "./field.js";
@@ -28,7 +27,6 @@ import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
   readingIsReady,
-  readingEntriesIn,
   readingSkillId,
   tokenizeReadings
 } from "./readings.js";
@@ -41,6 +39,7 @@ import {
   recordSessionCard,
   summarizeGuidedSession
 } from "./session.js";
+import { buildSkillMap, mapSkillStatus, practiceTargetFor } from "./map.js";
 import {
   clearState,
   createInitialState,
@@ -49,146 +48,37 @@ import {
   restoreProgressBackup,
   saveState
 } from "./store.js";
+import {
+  actionPair,
+  answerFieldDecision,
+  candidateAnswer,
+  cycleIndex,
+  fieldDecision,
+  FIELD_DECISION_START
+} from "./wizard.js";
+
+const PRODUCTION_URL = "https://kaiwa-nine.vercel.app/";
+const ROUTE_MINUTES = Object.freeze([10, 30, 60, 180, 360, 720]);
+const FIELD_LABELS = Object.freeze({
+  worked: "Worked",
+  phone_sheet: "Used phone sheet",
+  aborted: "Aborted safely",
+  failed: "Failed"
+});
 
 const dom = {
-  loading: document.querySelector("#loading"),
-  app: document.querySelector("#practice-app"),
-  error: document.querySelector("#error"),
+  title: document.querySelector("#app-title"),
+  badge: document.querySelector("#offline-badge"),
+  journeyFill: document.querySelector("#journey-fill"),
+  context: document.querySelector("#wizard-context"),
   placeholder: document.querySelector("#placeholder-warning"),
-  progress: document.querySelector("#progress"),
-  focusBanner: document.querySelector("#focus-banner"),
-  focusSummary: document.querySelector("#focus-summary"),
-  focusClear: document.querySelector("#focus-clear"),
-  mapOpen: document.querySelector("#map-open"),
-  mapDialog: document.querySelector("#skill-map-dialog"),
-  mapNext: document.querySelector("#map-next"),
-  mapClearFocus: document.querySelector("#map-clear-focus"),
-  mapDetail: document.querySelector("#map-detail"),
-  mapIslands: document.querySelector("#map-islands"),
-  sessionOpen: document.querySelector("#session-open"),
-  sessionSummary: document.querySelector("#session-summary"),
-  sessionDialog: document.querySelector("#session-dialog"),
-  sessionTitle: document.querySelector("#session-title"),
-  sessionSetup: document.querySelector("#session-setup"),
-  sessionPlan: document.querySelector("#session-plan"),
-  sessionStart: document.querySelector("#session-start"),
-  sessionActive: document.querySelector("#session-active"),
-  sessionProgress: document.querySelector("#session-progress"),
-  sessionStagePhrases: document.querySelector("#session-stage-phrases"),
-  sessionStageReadings: document.querySelector("#session-stage-readings"),
-  sessionStageMission: document.querySelector("#session-stage-mission"),
-  sessionContinue: document.querySelector("#session-continue"),
-  sessionEnd: document.querySelector("#session-end"),
-  sessionComplete: document.querySelector("#session-complete"),
-  sessionOutcome: document.querySelector("#session-outcome"),
-  sessionCompleteTitle: document.querySelector("#session-complete-title"),
-  sessionCompleteMetrics: document.querySelector("#session-complete-metrics"),
-  sessionResults: document.querySelector("#session-results"),
-  sessionAgain: document.querySelector("#session-again"),
-  missionOpen: document.querySelector("#mission-open"),
-  missionSummary: document.querySelector("#mission-summary"),
-  missionDialog: document.querySelector("#mission-dialog"),
-  missionTitle: document.querySelector("#mission-title"),
-  missionSetup: document.querySelector("#mission-setup"),
-  missionSelect: document.querySelector("#mission-select"),
-  missionPurpose: document.querySelector("#mission-purpose"),
-  missionHistory: document.querySelector("#mission-history"),
-  missionMode: document.querySelector("#mission-mode"),
-  missionChallenge: document.querySelector("#mission-challenge"),
-  missionStart: document.querySelector("#mission-start"),
-  missionRun: document.querySelector("#mission-run"),
-  missionProgress: document.querySelector("#mission-progress"),
-  missionKind: document.querySelector("#mission-kind"),
-  missionInstruction: document.querySelector("#mission-instruction"),
-  missionPrompt: document.querySelector("#mission-prompt"),
-  missionFuriganaStatus: document.querySelector("#mission-furigana-status"),
-  missionPromptMeaning: document.querySelector("#mission-prompt-meaning"),
-  missionHint: document.querySelector("#mission-hint"),
-  missionTimer: document.querySelector("#mission-timer"),
-  missionProductionReveal: document.querySelector("#mission-production-reveal"),
-  missionOptions: document.querySelector("#mission-options"),
-  missionFeedback: document.querySelector("#mission-feedback"),
-  missionFeedbackTitle: document.querySelector("#mission-feedback-title"),
-  missionCorrectLine: document.querySelector("#mission-correct-line"),
-  missionCorrectMeaning: document.querySelector("#mission-correct-meaning"),
-  missionProductionGrades: document.querySelector("#mission-production-grades"),
-  missionAdvance: document.querySelector("#mission-advance"),
-  missionEnd: document.querySelector("#mission-end"),
-  missionComplete: document.querySelector("#mission-complete"),
-  missionOutcome: document.querySelector("#mission-outcome"),
-  missionCompleteTitle: document.querySelector("#mission-complete-title"),
-  missionCompleteSummary: document.querySelector("#mission-complete-summary"),
-  missionSkillResults: document.querySelector("#mission-skill-results"),
-  missionCompleteMetrics: document.querySelector("#mission-complete-metrics"),
-  missionPracticeWeakest: document.querySelector("#mission-practice-weakest"),
-  missionAgain: document.querySelector("#mission-again"),
-  sheetOpen: document.querySelector("#sheet-open"),
-  sheetDialog: document.querySelector("#phone-sheet"),
-  sheetScenario: document.querySelector("#sheet-scenario"),
-  sheetPurpose: document.querySelector("#sheet-purpose"),
-  sheetLines: document.querySelector("#sheet-lines"),
-  abortOpen: document.querySelector("#abort-open"),
-  abortDialog: document.querySelector("#abort-dialog"),
-  abortJapanese: document.querySelector("#abort-japanese"),
-  abortMeaning: document.querySelector("#abort-meaning"),
-  routeScenario: document.querySelector("#route-scenario"),
-  routeMinutes: document.querySelector("#route-minutes"),
-  routeApply: document.querySelector("#route-apply"),
-  routeClear: document.querySelector("#route-clear"),
-  routeSummary: document.querySelector("#route-summary"),
-  fieldScenario: document.querySelector("#field-scenario"),
-  fieldSummary: document.querySelector("#field-summary"),
-  repairLauncher: document.querySelector("#repair-launcher"),
-  repairLaunchTitle: document.querySelector("#repair-launch-title"),
-  repairSummary: document.querySelector("#repair-summary"),
-  repairOpen: document.querySelector("#repair-open"),
-  repairDialog: document.querySelector("#repair-dialog"),
-  repairTitle: document.querySelector("#repair-title"),
-  repairStatus: document.querySelector("#repair-status"),
-  repairStageRecognition: document.querySelector("#repair-stage-recognition"),
-  repairStageReading: document.querySelector("#repair-stage-reading"),
-  repairStageProduction: document.querySelector("#repair-stage-production"),
-  repairStageAbort: document.querySelector("#repair-stage-abort"),
-  repairStageRevisit: document.querySelector("#repair-stage-revisit"),
-  repairAction: document.querySelector("#repair-action"),
-  repairEnd: document.querySelector("#repair-end"),
-  scenario: document.querySelector("#scenario"),
-  mode: document.querySelector("#mode"),
-  purpose: document.querySelector("#purpose"),
-  prompt: document.querySelector("#prompt"),
-  instruction: document.querySelector("#instruction"),
-  furiganaStatus: document.querySelector("#furigana-status"),
-  furiganaHelp: document.querySelector("#furigana-help"),
-  options: document.querySelector("#options"),
-  reveal: document.querySelector("#reveal"),
-  answer: document.querySelector("#answer"),
-  japanese: document.querySelector("#japanese"),
-  reading: document.querySelector("#reading"),
-  meaning: document.querySelector("#meaning"),
-  note: document.querySelector("#note"),
-  wordZoom: document.querySelector("#word-zoom"),
-  zoomContext: document.querySelector("#zoom-context"),
-  zoomBreakdown: document.querySelector("#zoom-breakdown"),
-  result: document.querySelector("#recognition-result"),
-  nextCard: document.querySelector("#next-card"),
-  evidence: document.querySelector("#evidence"),
-  roleplayStatus: document.querySelector("#roleplay-status"),
-  roleplayScenario: document.querySelector("#roleplay-scenario"),
-  roleplayReset: document.querySelector("#roleplay-reset"),
-  roleplayTranscript: document.querySelector("#roleplay-transcript"),
-  roleplayLines: document.querySelector("#roleplay-lines"),
-  roleplayInput: document.querySelector("#roleplay-input"),
-  roleplaySend: document.querySelector("#roleplay-send"),
-  roleplayError: document.querySelector("#roleplay-error"),
-  roleplayObservation: document.querySelector("#roleplay-observation"),
-  roleplayGuidance: document.querySelector("#roleplay-guidance"),
-  roleplayOutcomes: document.querySelector("#roleplay-outcomes"),
-  roleplayApply: document.querySelector("#roleplay-apply"),
-  roleplayDiscard: document.querySelector("#roleplay-discard"),
-  progressExport: document.querySelector("#progress-export"),
-  progressImportOpen: document.querySelector("#progress-import-open"),
+  loading: document.querySelector("#loading"),
+  error: document.querySelector("#error"),
+  screen: document.querySelector("#wizard-screen"),
+  actions: document.querySelector("#wizard-actions"),
+  secondary: document.querySelector("#action-secondary"),
+  primary: document.querySelector("#action-primary"),
   progressImport: document.querySelector("#progress-import"),
-  reset: document.querySelector("#reset"),
   toast: document.querySelector("#toast")
 };
 
@@ -197,1653 +87,163 @@ let tree;
 let readings;
 let missionPack;
 let missionLines;
-let items;
-let readingSkillIds;
+let items = [];
 let state;
-let currentItem;
-let answered = false;
-let roleplayAvailable = false;
-let roleplayHistory = [];
-let pendingRoleplayResult = null;
-let forcedFurigana = new Set();
-let selectedMapSkillId = null;
+let screen = { name: "home", data: {} };
+let cardUi = null;
+let missionChoiceUi = null;
 let completedMissionRun = null;
-let completedMissionWeakestSkillId = null;
-let missionTimerId = null;
-let repairTimerId = null;
+let tickerId = null;
+let roleplay = {
+  available: false,
+  model: null,
+  reason: "Checking optional provider…",
+  history: [],
+  pending: null,
+  draft: ""
+};
+
+function element(tag, className = "", text = "") {
+  const result = document.createElement(tag);
+  if (className) result.className = className;
+  if (text) result.textContent = text;
+  return result;
+}
 
 function showReadingFor(entry) {
   const skill = state.skills[readingSkillId(entry)];
   return !skill || !readingIsReady(readings, skill);
 }
 
-function renderJapanese(element, value, { alwaysShow = false, neverShow = false } = {}) {
-  element.replaceChildren();
-  for (const segment of tokenizeReadings(value, readings)) {
+function appendJapanese(target, value, { alwaysShow = false, neverShow = false } = {}) {
+  target.replaceChildren();
+  for (const segment of tokenizeReadings(String(value ?? ""), readings)) {
     if (!segment.entry) {
-      element.append(document.createTextNode(segment.text));
+      target.append(document.createTextNode(segment.text));
       continue;
     }
-
-    const ruby = document.createElement("ruby");
-    const base = document.createElement("span");
-    const reading = document.createElement("rt");
-    base.textContent = segment.text;
-    reading.textContent = segment.entry.reading;
-    const visible = alwaysShow || (!neverShow && (
-      forcedFurigana.has(segment.entry.id) || showReadingFor(segment.entry)
-    ));
+    const ruby = element("ruby");
+    const base = element("span", "", segment.text);
+    const rt = element("rt", "", segment.entry.reading);
+    const visible = alwaysShow || (!neverShow && showReadingFor(segment.entry));
     ruby.classList.toggle("furigana-hidden", !visible);
     ruby.dataset.readingSkill = readingSkillId(segment.entry);
-    reading.setAttribute("aria-hidden", String(!visible));
-    ruby.append(base, reading);
-    element.append(ruby);
+    rt.setAttribute("aria-hidden", String(!visible));
+    ruby.append(base, rt);
+    target.append(ruby);
   }
+  return target;
 }
 
-function renderRubyParts(element, parts) {
-  element.replaceChildren();
-  for (const part of parts) {
+function appendProviderParts(target, parts) {
+  target.replaceChildren();
+  for (const part of parts ?? []) {
     if (!part.reading) {
-      element.append(document.createTextNode(part.text));
+      target.append(document.createTextNode(part.text));
       continue;
     }
-    const ruby = document.createElement("ruby");
-    const base = document.createElement("span");
-    const reading = document.createElement("rt");
-    base.textContent = part.text;
-    reading.textContent = part.reading;
-    ruby.append(base, reading);
-    element.append(ruby);
+    const ruby = element("ruby");
+    ruby.append(element("span", "", part.text), element("rt", "", part.reading));
+    target.append(ruby);
   }
 }
 
-function scenarioById(id) {
-  return content.scenarios.find((scenario) => scenario.id === id);
+function screenHeading(kicker, title, copy = "") {
+  dom.screen.replaceChildren();
+  dom.screen.append(element("p", "screen-kicker", kicker));
+  dom.screen.append(element("h2", "screen-title", title));
+  if (copy) dom.screen.append(element("p", "screen-copy", copy));
 }
 
-function renderPhoneSheet(scenarioId) {
-  const scenario = scenarioById(scenarioId) ?? content.scenarios[0];
-  dom.sheetScenario.value = scenario.id;
-  dom.sheetPurpose.textContent = scenario.purpose;
-  dom.sheetLines.replaceChildren();
-
-  for (const line of scenario.allowedUserLines) {
-    const card = document.createElement("article");
-    card.className = line.skillId === scenario.abortSkillId
-      ? "sheet-line sheet-line-abort"
-      : "sheet-line";
-
-    const japanese = document.createElement("p");
-    japanese.className = "sheet-japanese";
-    japanese.lang = "ja";
-    renderJapanese(japanese, line.ja, { alwaysShow: true });
-
-    const meaning = document.createElement("p");
-    meaning.className = "sheet-meaning";
-    renderJapanese(meaning, line.meaning, { alwaysShow: true });
-
-    card.append(japanese, meaning);
-    dom.sheetLines.append(card);
-  }
+function addMeta(...labels) {
+  const row = element("div", "screen-meta");
+  for (const label of labels.filter(Boolean)) row.append(element("span", "pill", label));
+  dom.screen.append(row);
+  return row;
 }
 
-function populateSafetyTools() {
-  for (const scenario of content.scenarios) {
-    const option = document.createElement("option");
-    option.value = scenario.id;
-    option.textContent = scenario.title;
-    dom.sheetScenario.append(option);
-  }
-
-  const abortLine = content.scenarios
-    .flatMap((scenario) => scenario.allowedUserLines)
-    .find((line) => line.skillId === "abort.wakarimasen");
-  renderJapanese(dom.abortJapanese, abortLine.ja, { alwaysShow: true });
-  dom.abortMeaning.textContent = abortLine.meaning;
-  renderPhoneSheet(content.scenarios[0].id);
+function addDataCard(title, body = "") {
+  const card = element("article", "data-card");
+  if (title) card.append(element("p", "candidate-label", title));
+  if (body) card.append(element("p", "screen-copy", body));
+  dom.screen.append(card);
+  return card;
 }
 
-function appendTranscript(role, japanese, meaning = "", rubyParts = null) {
-  const message = document.createElement("article");
-  message.className = `transcript-message transcript-${role}`;
-
-  const label = document.createElement("p");
-  label.className = "transcript-label";
-  label.textContent = role === "user" ? "You" : "Partner";
-  const text = document.createElement("p");
-  text.className = "transcript-japanese";
-  text.lang = "ja";
-  if (rubyParts) renderRubyParts(text, rubyParts);
-  else renderJapanese(text, japanese, { alwaysShow: true });
-  message.append(label, text);
-
-  if (meaning) {
-    const translation = document.createElement("p");
-    translation.className = "transcript-meaning";
-    renderJapanese(translation, meaning, { alwaysShow: true });
-    message.append(translation);
-  }
-  dom.roleplayTranscript.append(message);
-  message.scrollIntoView({ behavior: "smooth", block: "nearest" });
+function configureAction(button, action) {
+  button.hidden = !action;
+  button.onclick = null;
+  button.disabled = false;
+  if (!action) return;
+  button.textContent = action.label;
+  button.disabled = Boolean(action.disabled);
+  button.onclick = action.onClick;
 }
 
-function renderRoleplayLines() {
-  const scenario = scenarioById(dom.roleplayScenario.value);
-  dom.roleplayLines.replaceChildren();
-  for (const line of scenario.allowedUserLines) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = line.skillId === scenario.abortSkillId
-      ? "line-chip line-chip-abort"
-      : "line-chip";
-    renderJapanese(button, line.ja, { alwaysShow: true });
-    button.disabled = !roleplayAvailable;
-    button.addEventListener("click", () => {
-      dom.roleplayInput.value = line.ja;
-      dom.roleplayInput.focus();
-    });
-    dom.roleplayLines.append(button);
-  }
+function setActions(secondary = null, primary = null) {
+  actionPair(secondary, primary);
+  configureAction(dom.secondary, secondary);
+  configureAction(dom.primary, primary);
+  dom.actions.hidden = !secondary && !primary;
 }
 
-function resetRoleplay() {
-  roleplayHistory = [];
-  pendingRoleplayResult = null;
-  dom.roleplayTranscript.replaceChildren();
-  dom.roleplayObservation.hidden = true;
-  dom.roleplayError.hidden = true;
-  dom.roleplayInput.value = "";
-  renderRoleplayLines();
+function setChrome({ title = "One decision at a time.", context = "Kaiwa wizard", progress = 0.12 } = {}) {
+  dom.title.textContent = title;
+  dom.context.textContent = context;
+  dom.journeyFill.style.width = `${Math.max(4, Math.min(100, progress * 100))}%`;
 }
 
-function renderRoleplayObservation(result) {
-  pendingRoleplayResult = result;
-  dom.roleplayOutcomes.replaceChildren();
-  for (const observation of result.observations) {
-    const entry = document.createElement("li");
-    const label = document.createElement("span");
-    renderJapanese(label, skillLabel(observation.skillId));
-    entry.append(label, document.createTextNode(`: ${observation.outcome.replace("_", " ")}`));
-    entry.dataset.outcome = observation.outcome;
-    dom.roleplayOutcomes.append(entry);
-  }
-  const guidance = [];
-  if (result.shouldAbort) guidance.push("The sensor recommends using the abort line.");
-  if (result.hint) guidance.push(result.hint);
-  dom.roleplayGuidance.textContent = guidance.join(" ");
-  dom.roleplayGuidance.hidden = guidance.length === 0;
-  dom.roleplayObservation.hidden = false;
+function stopTicker() {
+  if (tickerId != null) window.clearInterval(tickerId);
+  tickerId = null;
 }
 
-async function sendRoleplayTurn() {
-  const userText = dom.roleplayInput.value.trim();
-  if (!userText || !roleplayAvailable) return;
-
-  const priorHistory = [...roleplayHistory];
-  dom.roleplaySend.disabled = true;
-  dom.roleplaySend.textContent = "Waiting for partner…";
-  dom.roleplayError.hidden = true;
-  dom.roleplayObservation.hidden = true;
-  appendTranscript("user", userText);
-  dom.roleplayInput.value = "";
-
-  try {
-    const result = await requestRoleplay({
-      scenarioId: dom.roleplayScenario.value,
-      history: priorHistory,
-      userText
-    });
-    appendTranscript("assistant", result.staffReply.ja, result.staffReply.meaning, result.staffReply.parts);
-    roleplayHistory = [
-      ...priorHistory,
-      { role: "user", content: userText },
-      { role: "assistant", content: result.staffReply.ja }
-    ].slice(-12);
-    renderRoleplayObservation(result);
-  } catch (error) {
-    dom.roleplayError.textContent = error.message;
-    dom.roleplayError.hidden = false;
-  } finally {
-    dom.roleplaySend.disabled = false;
-    dom.roleplaySend.textContent = "Send practice turn";
-  }
-}
-
-function applyRoleplayObservations() {
-  if (!pendingRoleplayResult) return;
-  let applied = 0;
-  for (const observation of pendingRoleplayResult.observations) {
-    if (observation.outcome === "not_tested") continue;
-    state = applyObservation(state, {
-      id: `roleplay.${observation.skillId}.${Date.now()}`,
-      skillId: observation.skillId
-    }, observation.outcome === "success", Date.now() + applied, { source: "roleplay" });
-    applied += 1;
-  }
-
-  if (applied > 0) {
-    saveState(state);
-    renderCard();
-    showToast(`${applied} roleplay ${applied === 1 ? "observation" : "observations"} applied`);
-  } else {
-    showToast("No tested outcomes to apply");
-  }
-  pendingRoleplayResult = null;
-  dom.roleplayObservation.hidden = true;
-}
-
-async function setupRoleplay() {
-  for (const scenario of content.scenarios) {
-    const option = document.createElement("option");
-    option.value = scenario.id;
-    option.textContent = scenario.title;
-    dom.roleplayScenario.append(option);
-  }
-  resetRoleplay();
-
-  try {
-    const config = await getRoleplayConfig();
-    roleplayAvailable = config.available;
-    dom.roleplayStatus.textContent = config.available ? `Ready · ${config.model}` : "Not configured";
-    dom.roleplayStatus.classList.toggle("ready", config.available);
-    dom.roleplayInput.disabled = !config.available;
-    dom.roleplaySend.disabled = !config.available;
-    if (!config.available) {
-      dom.roleplayError.textContent = config.reason;
-      dom.roleplayError.hidden = false;
-    }
-  } catch {
-    roleplayAvailable = false;
-    dom.roleplayStatus.textContent = "Proxy unavailable";
-    dom.roleplayInput.disabled = true;
-    dom.roleplaySend.disabled = true;
-    dom.roleplayError.textContent = "Run the Node server to enable optional roleplay. Offline drills still work.";
-    dom.roleplayError.hidden = false;
-  }
-  renderRoleplayLines();
+function startTicker(callback, interval = 1000) {
+  stopTicker();
+  tickerId = window.setInterval(callback, interval);
 }
 
 function showToast(message) {
   dom.toast.textContent = message;
   dom.toast.classList.add("visible");
-  window.setTimeout(() => dom.toast.classList.remove("visible"), 1400);
+  window.setTimeout(() => dom.toast.classList.remove("visible"), 1500);
 }
 
-function skillLabel(skillId) {
-  return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
+function save() {
+  saveState(state);
 }
 
-const fieldOutcomeLabels = {
-  worked: "Worked",
-  phone_sheet: "Used phone sheet",
-  aborted: "Aborted safely",
-  failed: "Failed"
-};
+function show(name, data = {}) {
+  stopTicker();
+  screen = { name, data };
+  render();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function scenarioById(id) {
+  return content.scenarios.find((scenario) => scenario.id === id) ?? null;
+}
 
 function guidedSession() {
   return state.session?.active ?? null;
-}
-
-function guidedMission(session = guidedSession()) {
-  return missionById(missionPack, session?.missionId);
 }
 
 function repairSession() {
   return state.repair?.active ?? null;
 }
 
-function missionForId(missionId) {
+function missionForId(id) {
   const repair = repairSession();
-  if (repair?.mission?.id === missionId) return repair.mission;
-  return missionById(missionPack, missionId);
-}
-
-function renderSessionLauncher() {
-  const session = guidedSession();
-  if (!session) {
-    dom.sessionSummary.textContent = "3 recognition cards · 3 no-furigana readings · 1 speak-first mission";
-    dom.sessionOpen.textContent = "Start session";
-    return;
-  }
-  if (session.phase === "cards") {
-    dom.sessionSummary.textContent = `${session.outcomes.length}/${session.cardIds.length} cards complete · progress survives refresh`;
-    dom.sessionOpen.textContent = "Continue session";
-    return;
-  }
-  if (session.phase === "mission") {
-    dom.sessionSummary.textContent = `Cards complete · speak next: ${guidedMission(session)?.title ?? "closed-loop mission"}`;
-    dom.sessionOpen.textContent = state.mission.active ? "Resume mission" : "Run mission";
-    return;
-  }
-  dom.sessionSummary.textContent = `${session.outcomes.filter((outcome) => outcome.correct).length}/${session.cardIds.length} cards · mission ${session.missionOutcome ?? "complete"}`;
-  dom.sessionOpen.textContent = "View summary";
-}
-
-function setStageStatus(element, status) {
-  element.dataset.status = status;
-}
-
-function renderSessionSetup() {
-  const preview = buildGuidedSession({ items, tree, readings, missionPack, state });
-  const mission = guidedMission(preview);
-  dom.sessionTitle.textContent = "About five minutes.";
-  dom.sessionSetup.hidden = false;
-  dom.sessionActive.hidden = true;
-  dom.sessionComplete.hidden = true;
-  dom.sessionPlan.textContent = `Kaiwa will finish with a speak-first “${mission.title},” selected from weak skills, route urgency, mission history, and field results.`;
-}
-
-function renderSessionActive(session) {
-  const phraseDone = session.outcomes.filter((outcome) => outcome.mode !== "reading").length;
-  const readingDone = session.outcomes.filter((outcome) => outcome.mode === "reading").length;
-  const phraseTotal = session.phraseSkillIds.length;
-  const readingTotal = session.readingSkillIds.length;
-  dom.sessionTitle.textContent = "Guided session in progress.";
-  dom.sessionSetup.hidden = true;
-  dom.sessionActive.hidden = false;
-  dom.sessionComplete.hidden = true;
-  dom.sessionProgress.textContent = session.phase === "mission"
-    ? `All ${session.cardIds.length} cards complete. Say the fixed lines in “${guidedMission(session)?.title ?? "the selected mission"}.”`
-    : `Card ${session.outcomes.length + 1} of ${session.cardIds.length} · ${phraseDone} phrases and ${readingDone} readings complete`;
-  setStageStatus(dom.sessionStagePhrases, phraseDone >= phraseTotal ? "done" : "current");
-  setStageStatus(dom.sessionStageReadings, readingDone >= readingTotal
-    ? "done"
-    : phraseDone >= phraseTotal ? "current" : "upcoming");
-  setStageStatus(dom.sessionStageMission, session.phase === "mission" ? "current" : "upcoming");
-  dom.sessionContinue.textContent = session.phase === "mission"
-    ? state.mission.active ? "Resume selected mission" : "Start selected mission"
-    : "Continue cards";
-}
-
-function appendSessionDetail(titleText, detailText) {
-  const item = document.createElement("li");
-  const title = document.createElement("strong");
-  title.textContent = titleText;
-  const detail = document.createElement("span");
-  detail.textContent = detailText;
-  item.append(title, detail);
-  dom.sessionResults.append(item);
-}
-
-function renderSessionComplete(session) {
-  const summary = summarizeGuidedSession(session, { state, tree, readings, items });
-  const seconds = Math.round(summary.durationMs / 1000);
-  const duration = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  dom.sessionTitle.textContent = "Session result";
-  dom.sessionSetup.hidden = true;
-  dom.sessionActive.hidden = true;
-  dom.sessionComplete.hidden = false;
-  dom.sessionOutcome.textContent = `Mission ${summary.missionOutcome ?? "complete"}`;
-  dom.sessionCompleteTitle.textContent = summary.missionOutcome === "clean"
-    ? "Closed loop complete."
-    : summary.missionOutcome === "recovered"
-      ? "You recovered safely."
-      : "The loop needs another run.";
-  dom.sessionCompleteMetrics.textContent = `${duration} · four evidence channels kept separate · all progress saved locally`;
-  dom.sessionResults.replaceChildren();
-  appendSessionDetail(
-    "Recognition",
-    `${summary.phraseCorrect}/${summary.phraseTotal} correct. ${summary.newlyReadyPhrases.length} phrase${summary.newlyReadyPhrases.length === 1 ? "" : "s"} crossed the BKT readiness gate.`
-  );
-  const retired = summary.newlyRetiredReadings.map((item) => item.prompt).join(" · ");
-  const needs = summary.needsFurigana.map((item) => item.prompt).join(" · ");
-  appendSessionDetail(
-    "Reading",
-    `${summary.readingCorrect}/${summary.readingTotal} correct.${retired ? ` Furigana retired: ${retired}.` : " No new furigana retired."}${needs ? ` Still testing: ${needs}.` : ""}`
-  );
-  const production = summary.production;
-  appendSessionDetail(
-    "Production",
-    production
-      ? `${production.clean}/${production.total} said cleanly. Abort response: ${(production.abortResponseMs / 1000).toFixed(1)}s (target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s). This did not change BKT.`
-      : "No speak-first evidence recorded in this session."
-  );
-  const mission = guidedMission(session);
-  const field = latestFieldOutcome(state.field, mission?.scenarioId);
-  appendSessionDetail(
-    "Real world",
-    field
-      ? `${fieldOutcomeLabels[field.outcome]} was last logged for this scenario. It influences priority, not mastery.`
-      : "Not logged yet. After the real conversation, record whether it worked, needed the phone sheet, ended with the abort, or failed."
-  );
-}
-
-function renderSessionDialog() {
-  const session = guidedSession();
-  if (!session) renderSessionSetup();
-  else if (session.phase === "complete") renderSessionComplete(session);
-  else renderSessionActive(session);
-}
-
-function openSessionDialog() {
-  renderSessionDialog();
-  dom.sessionDialog.showModal();
-}
-
-function startGuidedSession() {
-  if (repairSession() && repairSession().phase !== "complete") {
-    if (dom.sessionDialog.open) dom.sessionDialog.close();
-    showToast("Finish or end the active field repair first");
-    openRepairDialog();
-    return;
-  }
-  if (state.mission.active) {
-    if (dom.sessionDialog.open) dom.sessionDialog.close();
-    showToast("Finish the active mission first");
-    openMissionDialog();
-    return;
-  }
-  const archived = archiveCompletedSession(state.session);
-  const cleanState = { ...state, session: archived };
-  const active = buildGuidedSession({ items, tree, readings, missionPack, state: cleanState });
-  state = { ...cleanState, session: { ...archived, active } };
-  saveState(state);
-  if (dom.sessionDialog.open) dom.sessionDialog.close();
-  renderCard();
-  document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
-  showToast("Five-minute session started");
-}
-
-function continueGuidedSession() {
-  const session = guidedSession();
-  if (!session) {
-    startGuidedSession();
-    return;
-  }
-  if (session.phase === "cards") {
-    if (dom.sessionDialog.open) dom.sessionDialog.close();
-    renderCard();
-    document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
-    return;
-  }
-  if (session.phase === "mission") {
-    if (dom.sessionDialog.open) dom.sessionDialog.close();
-    if (state.mission.active?.missionId === session.missionId) openMissionDialog();
-    else startMission(session.missionId, false, "production");
-    return;
-  }
-  renderSessionDialog();
-}
-
-function endGuidedSession() {
-  if (!window.confirm("End this guided session? Card and mission evidence already recorded will remain.")) return;
-  state = { ...state, session: { ...state.session, active: null } };
-  saveState(state);
-  dom.sessionDialog.close();
-  renderCard();
-  showToast("Session ended; progress kept");
-}
-
-function statsForMission(missionId) {
-  return state.mission.stats[missionId] ?? {
-    runs: 0,
-    cleanRuns: 0,
-    safeRecoveries: 0,
-    failedRuns: 0,
-    recognitionRuns: 0,
-    productionRuns: 0,
-    noFuriganaRuns: 0,
-    hints: 0,
-    totalResponseMs: 0,
-    recent: []
-  };
-}
-
-function renderMissionSummary() {
-  const allStats = Object.values(state.mission.stats);
-  const totals = allStats.reduce((result, stats) => ({
-    runs: result.runs + (stats.runs ?? 0),
-    clean: result.clean + (stats.cleanRuns ?? 0),
-    production: result.production + (stats.productionRuns ?? 0),
-    noFurigana: result.noFurigana + (stats.noFuriganaRuns ?? 0)
-  }), { runs: 0, clean: 0, production: 0, noFurigana: 0 });
-  if (state.mission.active) {
-    const active = missionForId(state.mission.active.missionId);
-    dom.missionSummary.textContent = `Resume ${active?.title ?? "active mission"} · step ${state.mission.active.stepIndex + 1}`;
-    dom.missionOpen.textContent = "Resume mission";
-    return;
-  }
-  dom.missionSummary.textContent = totals.runs === 0
-    ? `${missionPack.missions.length} fixed missions · speak first or recognize · no network`
-    : `${totals.clean}/${totals.runs} clean · ${totals.production} speak-first · ${totals.noFurigana} without furigana`;
-  dom.missionOpen.textContent = "Open missions";
-}
-
-function selectedMission() {
-  return missionById(missionPack, dom.missionSelect.value) ?? missionPack.missions[0];
-}
-
-function renderMissionLobby() {
-  const mission = selectedMission();
-  const stats = statsForMission(mission.id);
-  dom.missionTitle.textContent = "Closed-loop practice";
-  dom.missionSetup.hidden = false;
-  dom.missionRun.hidden = true;
-  dom.missionComplete.hidden = true;
-  dom.missionPurpose.textContent = mission.purpose;
-  dom.missionStart.textContent = dom.missionMode.value === "production"
-    ? "Start speak-first mission"
-    : "Start recognition mission";
-  dom.missionHistory.textContent = stats.runs === 0
-    ? `${mission.steps.length} fixed turns. The final turn deliberately goes off script.`
-    : `${stats.cleanRuns}/${stats.runs} clean · ${stats.productionRuns ?? 0} speak-first · ${stats.safeRecoveries} safe recoveries · ${stats.noFuriganaRuns} without furigana`;
-}
-
-function saveMissionRun(run) {
-  state = {
-    ...state,
-    mission: { ...state.mission, active: run }
-  };
-  saveState(state);
-  renderMissionSummary();
-}
-
-function missionStepEntries(step) {
-  const choiceText = step.choiceSkillIds
-    .map((skillId) => missionLines.get(skillId)?.ja ?? "")
-    .join(" ");
-  return readingEntriesIn(`${step.prompt} ${choiceText}`, readings);
-}
-
-function stopMissionTimer() {
-  if (missionTimerId != null) window.clearInterval(missionTimerId);
-  missionTimerId = null;
-}
-
-function updateMissionTimer(run, step, now = Date.now()) {
-  if (run.mode !== "production" || run.productionRevealed || run.awaitingAdvance) {
-    dom.missionTimer.hidden = true;
-    return;
-  }
-  const elapsed = Math.max(0, now - run.stepStartedAt);
-  const isAbort = step.targetSkillId === "abort.wakarimasen";
-  dom.missionTimer.hidden = false;
-  dom.missionTimer.classList.toggle("late", isAbort && elapsed > ABORT_TARGET_MS);
-  dom.missionTimer.textContent = isAbort
-    ? `${(elapsed / 1000).toFixed(1)}s · abort target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s`
-    : `${(elapsed / 1000).toFixed(1)}s · say the line before revealing`;
-}
-
-function startMissionTimer(run, step) {
-  stopMissionTimer();
-  updateMissionTimer(run, step);
-  if (run.mode === "production" && !run.productionRevealed && !run.awaitingAdvance) {
-    missionTimerId = window.setInterval(() => updateMissionTimer(run, step), 100);
-  }
-}
-
-function renderMissionFeedback(run, mission, step) {
-  const observation = run.observations.at(-1);
-  const correctLine = missionLines.get(step.targetSkillId);
-  dom.missionFeedback.hidden = false;
-  if (run.mode === "production") {
-    dom.missionFeedback.dataset.result = !run.awaitingAdvance
-      ? "pending"
-      : observation?.grade === "clean" ? "correct" : "incorrect";
-    dom.missionFeedbackTitle.textContent = !run.awaitingAdvance
-      ? `Compare with the fixed line · ${(run.productionResponseMs / 1000).toFixed(1)}s`
-      : observation.grade === "clean"
-        ? "Said cleanly — production evidence recorded. BKT unchanged."
-        : observation.grade === "help"
-          ? "Needed help — production evidence recorded. BKT unchanged."
-          : "Miss — production evidence recorded. BKT unchanged.";
-    dom.missionProductionGrades.hidden = run.awaitingAdvance;
-    dom.missionAdvance.hidden = !run.awaitingAdvance;
-  } else {
-    dom.missionFeedback.dataset.result = observation.answerCorrect ? "correct" : "incorrect";
-    dom.missionFeedbackTitle.textContent = observation.evidenceCorrect
-      ? "Correct — unaided mission evidence recorded."
-      : observation.answerCorrect
-        ? "Correct with help — BKT records this as a miss."
-        : "Not the fixed response — BKT records a miss.";
-    dom.missionProductionGrades.hidden = true;
-    dom.missionAdvance.hidden = false;
-  }
-  renderJapanese(dom.missionCorrectLine, correctLine.ja, { alwaysShow: true });
-  dom.missionCorrectMeaning.textContent = correctLine.meaning;
-  dom.missionAdvance.textContent = run.stepIndex === mission.steps.length - 1
-    ? "Finish mission"
-    : "Continue mission";
-}
-
-function revealProductionStep() {
-  const active = state.mission.active;
-  if (!active || active.mode !== "production" || active.productionRevealed) return;
-  stopMissionTimer();
-  saveMissionRun(revealProductionAnswer(active));
-  renderMissionStep();
-}
-
-function gradeProductionChoice(grade) {
-  const active = state.mission.active;
-  const mission = missionForId(active?.missionId);
-  if (!active || !mission || active.mode !== "production" || active.awaitingAdvance) return;
-  const run = gradeProductionStep(active, mission, grade);
-  state = applyProductionObservation(state, run.observations.at(-1));
-  saveMissionRun(run);
-  renderCard();
-  renderMissionStep();
-}
-
-function answerMissionChoice(selectedSkillId) {
-  const active = state.mission.active;
-  const mission = missionForId(active?.missionId);
-  if (!active || !mission || active.awaitingAdvance) return;
-  const step = mission.steps[active.stepIndex];
-  const run = answerMissionStep(active, mission, selectedSkillId);
-  const observation = run.observations.at(-1);
-  const observationItem = {
-    id: `mission.${mission.id}.${step.id}.${observation.observedAt}`,
-    skillId: observation.skillId,
-    options: step.choiceSkillIds.map((skillId) => ({ id: skillId }))
-  };
-  state = applyObservation(
-    state,
-    observationItem,
-    observation.evidenceCorrect,
-    observation.observedAt,
-    { source: "mission" }
-  );
-  saveMissionRun(run);
-  renderCard();
-  renderMissionStep();
-}
-
-function renderMissionStep() {
-  const run = state.mission.active;
-  const mission = missionForId(run?.missionId);
-  if (!run || !mission) {
-    renderMissionLobby();
-    return;
-  }
-  const step = mission.steps[run.stepIndex];
-  dom.missionTitle.textContent = mission.title;
-  dom.missionSetup.hidden = true;
-  dom.missionRun.hidden = false;
-  dom.missionComplete.hidden = true;
-  dom.missionProgress.textContent = `Turn ${run.stepIndex + 1} of ${mission.steps.length}`;
-  dom.missionKind.textContent = step.kind === "off_script" ? "Off script" : "Partner";
-  dom.missionKind.classList.toggle("mission-off-script", step.kind === "off_script");
-  dom.missionInstruction.textContent = run.mode === "production"
-    ? step.kind === "off_script"
-      ? "The exchange opened up. Say the abort aloud now; target five seconds."
-      : "Say your fixed response aloud before revealing it. No microphone is listening."
-    : step.kind === "off_script"
-      ? "The exchange opened up. Use the pre-decided recovery; do not improvise."
-      : "Choose your fixed response to the partner's Japanese.";
-  renderJapanese(dom.missionPrompt, step.prompt, { neverShow: run.hideFurigana });
-  const readingEntries = missionStepEntries(step);
-  const shownReadings = run.hideFurigana
-    ? 0
-    : readingEntries.filter((entry) => showReadingFor(entry)).length;
-  dom.missionFuriganaStatus.textContent = run.hideFurigana
-    ? `Challenge run · furigana${run.mode === "recognition" ? " and choice meanings" : ""} hidden`
-    : readingEntries.length === 0
-      ? "This turn uses kana only"
-      : `${shownReadings} supported · ${readingEntries.length - shownReadings} retired by reading checks`;
-  dom.missionPromptMeaning.textContent = step.meaning;
-  dom.missionPromptMeaning.hidden = !run.currentHintUsed && !run.awaitingAdvance;
-  dom.missionHint.hidden = run.awaitingAdvance || run.productionRevealed;
-  dom.missionHint.disabled = run.currentHintUsed;
-  dom.missionHint.textContent = run.currentHintUsed ? "Meaning shown — help recorded" : "Need help — show meaning";
-  dom.missionFeedback.hidden = true;
-  dom.missionProductionGrades.hidden = true;
-  dom.missionAdvance.hidden = false;
-  dom.missionProductionReveal.hidden = run.mode !== "production" || run.productionRevealed || run.awaitingAdvance;
-  dom.missionOptions.replaceChildren();
-
-  const observation = run.awaitingAdvance ? run.observations.at(-1) : null;
-  if (run.mode === "recognition") {
-    for (const skillId of step.choiceSkillIds) {
-      const line = missionLines.get(skillId);
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "mission-option";
-      button.disabled = run.awaitingAdvance;
-      button.dataset.skillId = skillId;
-      button.dataset.correct = String(skillId === step.targetSkillId);
-      const japanese = document.createElement("span");
-      japanese.className = "mission-option-japanese";
-      japanese.lang = "ja";
-      renderJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
-      button.append(japanese);
-      if (!run.hideFurigana) {
-        const meaning = document.createElement("span");
-        meaning.className = "mission-option-meaning";
-        meaning.textContent = line.meaning;
-        button.append(meaning);
-      }
-      if (observation) {
-        if (skillId === step.targetSkillId) button.classList.add("correct");
-        if (skillId === observation.selectedSkillId && !observation.answerCorrect) button.classList.add("incorrect");
-      }
-      button.addEventListener("click", () => answerMissionChoice(skillId));
-      dom.missionOptions.append(button);
-    }
-  }
-  if (run.awaitingAdvance || (run.mode === "production" && run.productionRevealed)) {
-    renderMissionFeedback(run, mission, step);
-  }
-  startMissionTimer(run, step);
-}
-
-function weakestMissionSkill(run) {
-  const skillIds = [...new Set(run.observations.map((observation) => observation.skillId))];
-  if (run.mode === "production") {
-    const gradeRank = { miss: 0, help: 1, clean: 2 };
-    return skillIds.sort((a, b) => {
-      const aObservation = run.observations.findLast((entry) => entry.skillId === a);
-      const bObservation = run.observations.findLast((entry) => entry.skillId === b);
-      const resultDifference = gradeRank[aObservation?.grade] - gradeRank[bObservation?.grade];
-      if (resultDifference) return resultDifference;
-      const readyDifference = Number(productionIsReady(state.skills[a])) - Number(productionIsReady(state.skills[b]));
-      return readyDifference
-        || (state.skills[a].production?.streak ?? 0) - (state.skills[b].production?.streak ?? 0);
-    })[0] ?? null;
-  }
-  return skillIds.sort((a, b) => {
-    const readyDifference = Number(skillIsReady(tree, state.skills[a])) - Number(skillIsReady(tree, state.skills[b]));
-    return readyDifference || probabilityKnown(state.skills[a]) - probabilityKnown(state.skills[b]);
-  })[0] ?? null;
-}
-
-function renderMissionComplete(run) {
-  const mission = missionForId(run.missionId);
-  completedMissionRun = run;
-  completedMissionWeakestSkillId = weakestMissionSkill(run);
-  const stats = statsForMission(mission.id);
-  const responseMs = run.observations.reduce((total, observation) => total + observation.responseMs, 0);
-  dom.missionTitle.textContent = mission.title;
-  dom.missionSetup.hidden = true;
-  dom.missionRun.hidden = true;
-  dom.missionComplete.hidden = false;
-  dom.missionOutcome.dataset.outcome = run.outcome;
-  dom.missionOutcome.textContent = run.outcome;
-  const wording = {
-    clean: ["Closed loop complete.", run.mode === "production"
-      ? "Every fixed line was said cleanly, and the abort came within five seconds."
-      : "Every fixed response—including the abort—was correct without help."],
-    recovered: ["Recovered safely.", run.mode === "production"
-      ? "The abort was available, but one line needed help or the abort took longer than five seconds."
-      : "There was a miss or hint, but you used the abort when the exchange opened up."],
-    failed: ["Loop needs another run.", "The final off-script turn was not recovered cleanly with the abort line."]
-  }[run.outcome];
-  dom.missionCompleteTitle.textContent = wording[0];
-  dom.missionCompleteSummary.textContent = wording[1];
-  dom.missionSkillResults.replaceChildren();
-  const results = new Map();
-  for (const observation of run.observations) {
-    const current = results.get(observation.skillId) ?? { correct: 0, helped: 0, missed: 0 };
-    if (run.mode === "production") {
-      current[observation.grade === "clean" ? "correct" : observation.grade === "help" ? "helped" : "missed"] += 1;
-    } else {
-      current[observation.evidenceCorrect ? "correct" : "missed"] += 1;
-    }
-    results.set(observation.skillId, current);
-  }
-  for (const [skillId, result] of results) {
-    const item = document.createElement("li");
-    const label = document.createElement("span");
-    label.className = "mission-skill-result-label";
-    renderJapanese(label, skillLabel(skillId));
-    const meta = document.createElement("span");
-    meta.className = "mission-skill-result-meta";
-    if (run.mode === "production") {
-      const production = state.skills[skillId].production;
-      meta.textContent = `${productionIsReady(state.skills[skillId]) ? "production ready" : `production streak ${production.streak}/2`} · ${result.correct} clean / ${result.helped} help / ${result.missed} miss`;
-    } else {
-      meta.textContent = `${Math.round(probabilityKnown(state.skills[skillId]) * 100)}% BKT · ${result.correct} hit / ${result.missed} miss`;
-    }
-    item.append(label, meta);
-    dom.missionSkillResults.append(item);
-  }
-  dom.missionCompleteMetrics.textContent = `${(responseMs / 1000).toFixed(1)}s response time · ${run.hints} hints · ${stats.cleanRuns}/${stats.runs} clean overall · ${run.mode === "production" ? "production only; BKT unchanged" : "recognition BKT recorded"}${run.hideFurigana ? " · challenge run" : ""}`;
-  dom.missionPracticeWeakest.disabled = !completedMissionWeakestSkillId;
-}
-
-function startMission(
-  missionId = dom.missionSelect.value,
-  hideFurigana = dom.missionChallenge.checked,
-  mode = dom.missionMode.value
-) {
-  const repair = repairSession();
-  if (repair && repair.phase !== "complete") {
-    showToast("Finish or end the active field repair first");
-    openRepairDialog();
-    return;
-  }
-  const mission = missionById(missionPack, missionId);
-  if (!mission) return;
-  completedMissionRun = null;
-  completedMissionWeakestSkillId = null;
-  dom.missionSelect.value = mission.id;
-  dom.missionMode.value = mode;
-  saveMissionRun(createMissionRun(mission, Date.now(), { hideFurigana, mode }));
-  renderMissionStep();
-  if (!dom.missionDialog.open) dom.missionDialog.showModal();
-}
-
-function openMissionDialog() {
-  completedMissionRun = null;
-  if (state.mission.active) renderMissionStep();
-  else renderMissionLobby();
-  dom.missionDialog.showModal();
-}
-
-function focusDescription() {
-  const focus = state.focus;
-  if (focus?.skillId) return skillLabel(focus.skillId);
-  const scenario = scenarioById(focus?.scenarioId);
-  if (!scenario) return "";
-  return focus.mode === "reading" ? `${scenario.title} readings` : scenario.title;
-}
-
-function renderFocus() {
-  const description = focusDescription();
-  dom.focusBanner.hidden = !description;
-  dom.focusSummary.replaceChildren();
-  if (description) {
-    dom.focusSummary.append(document.createTextNode("Practice focus: "));
-    const label = document.createElement("strong");
-    renderJapanese(label, description);
-    dom.focusSummary.append(label, document.createTextNode(". This overrides automatic route selection."));
-  }
-  dom.focusClear.hidden = !description;
-  dom.mapClearFocus.hidden = !description;
-}
-
-function setPracticeFocus({ scenarioId, skillId = null, mode = null }, message) {
-  state = { ...state, focus: { scenarioId, skillId, mode } };
-  saveState(state);
-  renderCard();
-  if (dom.mapDialog.open) dom.mapDialog.close();
-  showToast(message);
-}
-
-function clearPracticeFocus() {
-  if (!focusDescription()) return;
-  state = { ...state, focus: { scenarioId: null, skillId: null, mode: null } };
-  saveState(state);
-  renderCard();
-  if (dom.mapDialog.open) renderSkillMap();
-  showToast("Practice focus cleared");
-}
-
-function svgElement(name, attributes = {}) {
-  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
-  return element;
-}
-
-function renderMapDetail(model, skillId) {
-  const node = model.islands.flatMap((island) => island.nodes).find((entry) => entry.id === skillId);
-  if (!node) {
-    dom.mapDetail.hidden = true;
-    return;
-  }
-
-  selectedMapSkillId = skillId;
-  dom.mapDetail.replaceChildren();
-  dom.mapDetail.hidden = false;
-
-  const title = document.createElement("h3");
-  renderJapanese(title, node.label);
-  const status = document.createElement("div");
-  status.className = "map-detail-status";
-  const statusChip = document.createElement("span");
-  statusChip.className = "map-status-chip";
-  statusChip.dataset.status = node.status;
-  statusChip.textContent = node.status[0].toUpperCase() + node.status.slice(1);
-  const knownChip = document.createElement("span");
-  knownChip.className = "map-status-chip";
-  knownChip.textContent = `${node.knownPercent}% BKT · ${state.skills[skillId].correct}/${tree.readyMinCorrect ?? 2} confirmations`;
-  const productionChip = document.createElement("span");
-  const production = state.skills[skillId].production;
-  productionChip.className = "map-status-chip";
-  productionChip.textContent = production.attempts > 0
-    ? `${production.streak}/2 spoken clean${productionIsReady(state.skills[skillId]) ? " · ready" : ""}`
-    : "spoken · untested";
-  status.append(statusChip, knownChip, productionChip);
-  dom.mapDetail.append(title, status);
-
-  const item = items.find((candidate) => candidate.skillId === skillId && candidate.mode !== "reading")
-    ?? items.find((candidate) => candidate.skillId === skillId);
-  if (item) {
-    const sample = document.createElement("p");
-    sample.className = "map-detail-sample";
-    sample.lang = "ja";
-    renderJapanese(sample, item.prompt);
-    dom.mapDetail.append(sample);
-  }
-
-  if (model.current?.skillId === skillId) {
-    const note = document.createElement("p");
-    note.className = "map-detail-note";
-    note.textContent = `This is the current next card: ${model.current.reason}.`;
-    dom.mapDetail.append(note);
-  }
-
-  const prerequisites = node.prerequisites;
-  if (prerequisites.length > 0) {
-    const list = document.createElement("ul");
-    list.className = "map-prerequisites";
-    for (const prerequisiteId of prerequisites) {
-      const entry = document.createElement("li");
-      const label = document.createElement("span");
-      renderJapanese(label, skillLabel(prerequisiteId));
-      const known = Math.round(probabilityKnown(state.skills[prerequisiteId]) * 100);
-      entry.append(label, document.createTextNode(` · ${known}% BKT`));
-      list.append(entry);
-    }
-    dom.mapDetail.append(list);
-  } else {
-    const note = document.createElement("p");
-    note.className = "map-detail-note";
-    note.textContent = "No prerequisite — this branch is available immediately.";
-    dom.mapDetail.append(note);
-  }
-
-  const targetId = practiceTargetFor(tree, state, skillId);
-  const targetItem = targetId
-    ? items.find((candidate) => candidate.skillId === targetId && candidate.mode !== "reading")
-      ?? items.find((candidate) => candidate.skillId === targetId)
-    : null;
-  const practice = document.createElement("button");
-  practice.type = "button";
-  practice.className = "reveal-button";
-  practice.disabled = !targetItem;
-  if (!targetItem) {
-    practice.textContent = "No practice card available";
-  } else if (targetId === skillId) {
-    practice.textContent = "Practice this skill";
-  } else {
-    practice.append(document.createTextNode("Practice prerequisite: "));
-    const targetLabel = document.createElement("span");
-    renderJapanese(targetLabel, skillLabel(targetId));
-    practice.append(targetLabel);
-  }
-  practice.addEventListener("click", () => {
-    setPracticeFocus({ scenarioId: targetItem.scenarioId, skillId: targetId }, "Skill focus set");
-  });
-  dom.mapDetail.append(practice);
-}
-
-function renderMapIsland(model, island) {
-  const details = document.createElement("details");
-  details.className = "map-island";
-  details.dataset.scenario = island.id;
-  details.open = island.id === model.current?.scenarioId
-    || island.focused
-    || island.readingsFocused
-    || island.nodes.some((node) => node.id === selectedMapSkillId);
-
-  const summary = document.createElement("summary");
-  const heading = document.createElement("span");
-  heading.className = "map-island-title";
-  heading.textContent = island.title;
-  const stats = document.createElement("span");
-  stats.className = "map-island-stats";
-  stats.textContent = `${island.phraseReady}/${island.phraseTotal} phrases · ${island.readingReady}/${island.readingTotal} readings`;
-  summary.append(heading, stats);
-
-  const body = document.createElement("div");
-  body.className = "map-island-body";
-  const purpose = document.createElement("p");
-  purpose.className = "map-island-purpose";
-  purpose.textContent = island.purpose;
-  const actions = document.createElement("div");
-  actions.className = "map-island-actions";
-  const focusScenario = document.createElement("button");
-  focusScenario.type = "button";
-  focusScenario.className = "small-button";
-  focusScenario.dataset.active = String(island.focused);
-  focusScenario.textContent = island.focused ? "Scenario focused" : "Practice this scenario";
-  focusScenario.addEventListener("click", () => {
-    setPracticeFocus({ scenarioId: island.id }, `Focused ${island.title}`);
-  });
-  actions.append(focusScenario);
-
-  const viewport = document.createElement("div");
-  viewport.className = "map-canvas-scroll";
-  const svg = svgElement("svg", {
-    class: "map-canvas",
-    viewBox: `0 0 ${island.width} ${island.height}`,
-    width: island.width,
-    height: island.height,
-    role: "group",
-    "aria-label": `${island.title} prerequisite map`
-  });
-  const markerId = `map-arrow-${island.id.replace(/[^a-z0-9-]/gi, "-")}`;
-  const defs = svgElement("defs");
-  const marker = svgElement("marker", {
-    id: markerId,
-    viewBox: "0 0 10 10",
-    refX: 9,
-    refY: 5,
-    markerWidth: 5,
-    markerHeight: 5,
-    orient: "auto-start-reverse"
-  });
-  marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#9aaba1" }));
-  defs.append(marker);
-  svg.append(defs);
-
-  for (const edge of island.edges) {
-    svg.append(svgElement("path", {
-      class: "map-edge",
-      d: edge.d,
-      "marker-end": `url(#${markerId})`
-    }));
-  }
-  for (const node of island.nodes) {
-    const container = svgElement("foreignObject", {
-      x: node.x,
-      y: node.y,
-      width: node.width,
-      height: node.height
-    });
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "map-node";
-    button.dataset.status = node.status;
-    button.dataset.next = String(node.next);
-    button.dataset.focused = String(node.focused);
-    button.dataset.skill = node.id;
-    button.setAttribute("aria-pressed", String(node.id === selectedMapSkillId));
-    button.setAttribute("aria-label", `${node.label}: ${node.status}, ${node.knownPercent}% known`);
-    const label = document.createElement("span");
-    label.className = "map-node-title";
-    renderJapanese(label, node.label);
-    const meta = document.createElement("span");
-    meta.className = "map-node-meta";
-    meta.textContent = `${node.knownPercent}% · ${node.status}${node.externalPrerequisiteCount ? ` · ${node.externalPrerequisiteCount} outside` : ""}`;
-    button.append(label, meta);
-    button.addEventListener("click", () => {
-      dom.mapIslands.querySelectorAll(".map-node[aria-pressed='true']")
-        .forEach((entry) => entry.setAttribute("aria-pressed", "false"));
-      button.setAttribute("aria-pressed", "true");
-      renderMapDetail(model, node.id);
-      dom.mapDetail.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    container.append(button);
-    svg.append(container);
-  }
-  viewport.append(svg);
-  body.append(purpose, actions, viewport);
-
-  if (island.readingTotal > 0) {
-    const readingCluster = document.createElement("button");
-    readingCluster.type = "button";
-    readingCluster.className = "map-reading-cluster";
-    readingCluster.dataset.focused = String(island.readingsFocused);
-    readingCluster.dataset.next = String(island.nextReading);
-    readingCluster.setAttribute("aria-label", `Practice ${island.title} readings`);
-    const total = document.createElement("strong");
-    total.textContent = `Reading cluster · ${island.readingReady}/${island.readingTotal} furigana retired`;
-    const weakest = document.createElement("span");
-    const weakText = island.weakestReadings
-      .map((entry) => entry.term)
-      .join(" · ");
-    renderJapanese(weakest, `Needs work: ${weakText}`);
-    readingCluster.append(total, weakest);
-    readingCluster.addEventListener("click", () => {
-      setPracticeFocus({ scenarioId: island.id, mode: "reading" }, `Focused ${island.title} readings`);
-    });
-    body.append(readingCluster);
-  }
-
-  details.append(summary, body);
-  return details;
-}
-
-function renderSkillMap() {
-  const model = buildSkillMap({ content, tree, readings, state, currentItem });
-  dom.mapNext.replaceChildren();
-  if (model.current) {
-    dom.mapNext.append(document.createTextNode("Next: "));
-    const label = document.createElement("strong");
-    renderJapanese(label, model.current.label);
-    dom.mapNext.append(label, document.createTextNode(` · ${model.current.reason}`));
-  } else {
-    dom.mapNext.textContent = "No next card is currently available.";
-  }
-
-  if (!selectedMapSkillId || !model.islands.some((island) => island.nodes.some((node) => node.id === selectedMapSkillId))) {
-    selectedMapSkillId = currentItem?.mode === "reading" ? null : currentItem?.skillId;
-  }
-  renderMapDetail(model, selectedMapSkillId);
-  dom.mapIslands.replaceChildren(...model.islands.map((island) => renderMapIsland(model, island)));
-  renderFocus();
-}
-
-function showAnswer(resultText = "") {
-  answered = true;
-  dom.answer.hidden = false;
-  dom.reveal.hidden = true;
-  dom.nextCard.hidden = false;
-  const repair = repairSession();
-  const session = guidedSession();
-  dom.nextCard.textContent = repair?.phase === "mission"
-    ? "Start spoken repair"
-    : repair?.phase === "cards"
-      ? "Next repair check"
-      : session?.phase === "mission"
-    ? "Start session mission"
-    : session?.phase === "cards" ? "Next session card" : "Next card";
-  dom.result.textContent = resultText;
-}
-
-function applyCardAnswer(item, correct, now = Date.now()) {
-  const activeRepair = repairSession();
-  const repairItem = currentRepairCard(activeRepair, items);
-  const active = guidedSession();
-  const sessionItem = currentSessionCard(active, items);
-  state = applyObservation(state, item, correct, now);
-  if (repairItem?.id === item.id) {
-    state = {
-      ...state,
-      repair: {
-        ...state.repair,
-        active: recordRepairCard(activeRepair, item, correct, now)
-      }
-    };
-  }
-  if (sessionItem?.id === item.id) {
-    state = {
-      ...state,
-      session: {
-        ...state.session,
-        active: recordSessionCard(active, item, correct, now)
-      }
-    };
-  }
-  saveState(state);
-}
-
-function renderOptions(item) {
-  dom.options.replaceChildren();
-
-  for (const option of item.options) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "option-button";
-    renderJapanese(button, option.label, {
-      neverShow: item.mode === "reading" || item.mode === "focus"
-    });
-    button.dataset.correct = String(option.correct);
-    button.addEventListener("click", () => {
-      if (answered) return;
-      applyCardAnswer(item, option.correct);
-      for (const sibling of dom.options.children) {
-        sibling.disabled = true;
-        if (sibling.dataset.correct === "true") sibling.classList.add("correct");
-      }
-      button.classList.add(option.correct ? "correct" : "incorrect");
-      showAnswer(option.correct ? "Correct — BKT updated." : "Not this one — BKT recorded a miss.");
-      renderEvidence();
-      renderProgress();
-      renderSessionLauncher();
-      renderRepairLauncher();
-    });
-    dom.options.append(button);
-  }
-}
-
-function renderPromptFurigana() {
-  const isReadingTest = currentItem.mode === "reading" || currentItem.mode === "focus";
-  renderJapanese(dom.prompt, currentItem.prompt, { neverShow: isReadingTest });
-  const entries = readingEntriesIn(currentItem.prompt, readings);
-
-  if (isReadingTest) {
-    const skill = state.skills[currentItem.skillId];
-    const streak = skill?.readingCheckpointStreak ?? 0;
-    const needed = readings.furiganaMinStreak ?? 2;
-    dom.furiganaStatus.textContent = `No-furigana checkpoint · ${Math.min(streak, needed)}/${needed} consecutive passes`;
-    dom.furiganaHelp.hidden = true;
-    return;
-  }
-  if (entries.length === 0) {
-    dom.furiganaStatus.textContent = "No kanji reading in this prompt";
-    dom.furiganaHelp.hidden = true;
-    return;
-  }
-
-  const retired = entries.filter((entry) => !showReadingFor(entry) && !forcedFurigana.has(entry.id));
-  const shown = entries.length - retired.length;
-  dom.furiganaStatus.textContent = `${shown} supported · ${retired.length} retired by reading checks`;
-  dom.furiganaHelp.hidden = retired.length === 0;
-  dom.furiganaHelp.textContent = `Show ${retired.length} retired ${retired.length === 1 ? "reading" : "readings"}`;
-}
-
-function showRetiredFurigana() {
-  const entries = readingEntriesIn(currentItem.prompt, readings)
-    .filter((entry) => !showReadingFor(entry) && !forcedFurigana.has(entry.id));
-  if (entries.length === 0) return;
-
-  const now = Date.now();
-  for (const [index, entry] of entries.entries()) {
-    state = applyObservation(state, {
-      id: `hint.${entry.id}.${now}`,
-      skillId: readingSkillId(entry),
-      mode: "reading",
-      options: [{}, {}, {}]
-    }, false, now + index, { source: "hint" });
-    forcedFurigana.add(entry.id);
-  }
-  saveState(state);
-  renderPromptFurigana();
-  renderProgress();
-  showToast(`${entries.length} reading ${entries.length === 1 ? "hint" : "hints"} recorded`);
-}
-
-function recordUnsure() {
-  if (answered) return;
-  applyCardAnswer(currentItem, false);
-  for (const button of dom.options.children) {
-    button.disabled = true;
-    if (button.dataset.correct === "true") button.classList.add("correct");
-  }
-  showAnswer("Shown as a miss — uncertainty is evidence too.");
-  renderEvidence();
-  renderProgress();
-  renderSessionLauncher();
-  renderRepairLauncher();
-}
-
-function renderEvidence() {
-  const skill = state.skills[currentItem.skillId];
-  const known = Math.round(probabilityKnown(skill) * 100);
-  const minimumCorrect = tree.readyMinCorrect ?? 2;
-  const isReading = currentItem.mode === "reading";
-  const readiness = isReading
-    ? readingIsReady(readings, skill) ? "reading secure" : "furigana still supported"
-    : skillIsReady(tree, skill)
-      ? "ready"
-      : `${Math.min(skill.correct, minimumCorrect)}/${minimumCorrect} confirmations`;
-  const readingGate = isReading
-    ? ` · checkpoint ${Math.min(skill.readingCheckpointStreak ?? 0, readings.furiganaMinStreak ?? 2)}/${readings.furiganaMinStreak ?? 2}`
-    : "";
-  dom.evidence.textContent = `BKT estimate ${known}% known · ${skill.correct} correct / ${skill.incorrect} missed · ${readiness}${readingGate}`;
-}
-
-function renderProgress() {
-  const reviewLabel = state.totalReviews === 1 ? "review" : "reviews";
-  const readingIds = [...readingSkillIds];
-  const phraseIds = tree.nodes.map((node) => node.id).filter((id) => !readingSkillIds.has(id));
-  const readingSeen = readingIds.filter((id) => state.skills[id]?.attempts > 0).length;
-  const phraseSeen = phraseIds.filter((id) => state.skills[id]?.attempts > 0).length;
-  dom.progress.textContent = `${state.totalReviews} ${reviewLabel} · ${state.totalProduction ?? 0} spoken turns · phrases ${phraseSeen}/${phraseIds.length} · readings ${readingSeen}/${readingIds.length} · saved here`;
-}
-
-function renderRoute() {
-  const routeScenario = scenarioById(state.route.scenarioId);
-  if (!routeScenario || !state.route.eventAt) {
-    dom.routeSummary.textContent = "No next-event boost set.";
-    dom.routeClear.hidden = true;
-    return;
-  }
-
-  const minutes = Math.round((state.route.eventAt - Date.now()) / 60000);
-  dom.routeSummary.textContent = minutes > 0
-    ? `Boosting ${routeScenario.title} — event in about ${minutes} min.`
-    : `${routeScenario.title} event time passed — boost is inactive.`;
-  dom.routeClear.hidden = false;
-  dom.routeScenario.value = routeScenario.id;
-}
-
-function renderFieldSummary(preferredScenarioId = null) {
-  const scenarioId = preferredScenarioId
-    ?? dom.fieldScenario.value
-    ?? currentItem?.scenarioId;
-  if (scenarioById(scenarioId)) dom.fieldScenario.value = scenarioId;
-  const latest = latestFieldOutcome(state.field, dom.fieldScenario.value);
-  const counts = fieldCounts(state.field, dom.fieldScenario.value);
-  if (!latest) {
-    dom.fieldSummary.textContent = "Nothing logged for this scenario yet.";
-    return;
-  }
-  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
-  dom.fieldSummary.textContent = `Latest: ${fieldOutcomeLabels[latest.outcome]} · ${total} field ${total === 1 ? "result" : "results"} · practice priority adjusted locally`;
-}
-
-function repairOffer(scenarioId = dom.fieldScenario.value) {
-  const event = latestFieldOutcome(state.field, scenarioId);
-  if (!event || !REPAIRABLE_FIELD_OUTCOMES.includes(event.outcome)) return null;
-  if (repairHandledFieldEvent(state.repair, event.id)) return null;
-  if (!missionPack.missions.some((mission) => mission.scenarioId === event.scenarioId)) return null;
-  return event;
-}
-
-function stopRepairTimer() {
-  if (repairTimerId != null) window.clearInterval(repairTimerId);
-  repairTimerId = null;
-}
-
-function repairWaitText(session, now = Date.now()) {
-  const remaining = Math.max(0, session.revisitAt - now);
-  if (remaining === 0) return "Ten-minute revisit ready.";
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.ceil((remaining % 60000) / 1000);
-  return `Revisit in ${minutes}:${String(seconds).padStart(2, "0")}. It survives refresh.`;
-}
-
-function scheduleRepairTimer(session) {
-  stopRepairTimer();
-  if (session?.phase !== "waiting" || session.revisitAt <= Date.now()) return;
-  repairTimerId = window.setInterval(() => {
-    renderRepairLauncher();
-    if (dom.repairDialog.open) renderRepairDialog();
-  }, 1000);
-}
-
-function renderRepairLauncher() {
-  const active = repairSession();
-  const offer = repairOffer();
-  dom.repairLauncher.hidden = !active && !offer;
-  if (!active && !offer) {
-    stopRepairTimer();
-    return;
-  }
-  if (!active) {
-    const scenario = scenarioById(offer.scenarioId);
-    dom.repairLaunchTitle.textContent = `Repair ${scenario.title}.`;
-    dom.repairSummary.textContent = `${fieldOutcomeLabels[offer.outcome]} stays in the field log. Practice the weak prompt, reading, fixed response, and abort.`;
-    dom.repairOpen.textContent = "Start repair";
-    stopRepairTimer();
-    return;
-  }
-  const scenario = scenarioById(active.scenarioId);
-  dom.repairLaunchTitle.textContent = `${scenario.title} field repair`;
-  if (active.phase === "cards") {
-    dom.repairSummary.textContent = `${active.outcomes.length}/${active.cardIds.length} objective checks complete.`;
-    dom.repairOpen.textContent = "Continue repair";
-  } else if (active.phase === "mission") {
-    dom.repairSummary.textContent = active.round === "revisit"
-      ? "Ten-minute revisit: say the fixed line and timed abort again."
-      : "Objective checks complete. Say the fixed line and timed abort.";
-    dom.repairOpen.textContent = state.mission.active ? "Resume speaking" : "Start speaking";
-  } else if (active.phase === "waiting") {
-    dom.repairSummary.textContent = repairWaitText(active);
-    dom.repairOpen.textContent = active.revisitAt <= Date.now() ? "Start revisit" : "View repair";
-  } else {
-    dom.repairSummary.textContent = `Repair complete. Original field result remains ${fieldOutcomeLabels[active.fieldOutcome]}.`;
-    dom.repairOpen.textContent = "View result";
-  }
-  scheduleRepairTimer(active);
-}
-
-function repairStageStatuses(session) {
-  if (!session) return ["current", "upcoming", "upcoming", "upcoming", "upcoming"];
-  const recognitionDone = session.outcomes.length >= 1;
-  const readingDone = session.outcomes.length >= 2;
-  let production = readingDone ? "current" : "upcoming";
-  let abort = "upcoming";
-  let revisit = "upcoming";
-  if (session.phase === "mission" && session.round === "initial") {
-    const step = state.mission.active?.missionId === session.mission.id
-      ? state.mission.active.stepIndex
-      : 0;
-    production = step > 0 ? "done" : "current";
-    abort = step > 0 ? "current" : "upcoming";
-  }
-  if (["waiting", "complete"].includes(session.phase) || session.round === "revisit") {
-    production = "done";
-    abort = "done";
-  }
-  if (session.phase === "mission" && session.round === "revisit") revisit = "current";
-  if (session.phase === "complete") revisit = "done";
-  return [
-    recognitionDone ? "done" : "current",
-    readingDone ? "done" : recognitionDone ? "current" : "upcoming",
-    production,
-    abort,
-    revisit
-  ];
-}
-
-function renderRepairDialog() {
-  const active = repairSession();
-  const offer = repairOffer();
-  const scenarioId = active?.scenarioId ?? offer?.scenarioId;
-  const scenario = scenarioById(scenarioId);
-  dom.repairTitle.textContent = scenario ? `Repair ${scenario.title}.` : "Field repair";
-  const statuses = repairStageStatuses(active);
-  [
-    dom.repairStageRecognition,
-    dom.repairStageReading,
-    dom.repairStageProduction,
-    dom.repairStageAbort,
-    dom.repairStageRevisit
-  ].forEach((element, index) => setStageStatus(element, statuses[index]));
-  dom.repairEnd.hidden = !active || active.phase === "complete";
-  dom.repairAction.disabled = false;
-
-  if (!active) {
-    dom.repairStatus.textContent = offer
-      ? `${fieldOutcomeLabels[offer.outcome]} remains the real result. This repair adds two objective checks, two spoken recalls, and a ten-minute revisit without rewriting it.`
-      : "Log a difficult real conversation to build a repair."
-    dom.repairAction.textContent = offer ? "Start two-card repair" : "No repair available";
-    dom.repairAction.disabled = !offer;
-    return;
-  }
-  if (active.phase === "cards") {
-    dom.repairStatus.textContent = `Complete ${active.cardIds.length - active.outcomes.length} more objective ${active.cardIds.length - active.outcomes.length === 1 ? "check" : "checks"}, then retrieve the weakest fixed line aloud.`;
-    dom.repairAction.textContent = "Continue objective checks";
-  } else if (active.phase === "mission") {
-    dom.repairStatus.textContent = active.round === "revisit"
-      ? "No cards this time: retrieve the same fixed response and abort without furigana."
-      : "Choices are hidden. Say the weakest fixed response, then recover from the off-script turn within five seconds.";
-    dom.repairAction.textContent = state.mission.active ? "Resume spoken repair" : "Start spoken repair";
-  } else if (active.phase === "waiting") {
-    dom.repairStatus.textContent = `${repairWaitText(active)} The original ${fieldOutcomeLabels[active.fieldOutcome].toLowerCase()} result is unchanged.`;
-    dom.repairAction.textContent = active.revisitAt <= Date.now() ? "Start ten-minute revisit" : "Revisit not due yet";
-    dom.repairAction.disabled = active.revisitAt > Date.now();
-  } else {
-    const revisit = active.revisit;
-    dom.repairStatus.textContent = `Repair complete: ${revisit.clean}/${revisit.total} revisit lines said cleanly; abort ${(revisit.abortResponseMs / 1000).toFixed(1)}s. Field log still says ${fieldOutcomeLabels[active.fieldOutcome]}.`;
-    dom.repairAction.textContent = "Done";
-  }
-}
-
-function openRepairDialog() {
-  renderRepairDialog();
-  if (!dom.repairDialog.open) dom.repairDialog.showModal();
-}
-
-function startRepair() {
-  const currentSession = guidedSession();
-  if (currentSession && currentSession.phase !== "complete") {
-    showToast("Finish or end the guided session first");
-    return;
-  }
-  if (state.mission.active) {
-    showToast("Finish the active mission first");
-    return;
-  }
-  const event = repairOffer();
-  if (!event) return;
-  const repairState = archiveCompletedRepair(state.repair);
-  const cleanSession = currentSession?.phase === "complete"
-    ? archiveCompletedSession(state.session)
-    : state.session;
-  const active = buildRepairSession({ event, items, missionPack, state, now: Date.now() });
-  state = { ...state, repair: { ...repairState, active }, session: cleanSession };
-  saveState(state);
-  if (dom.repairDialog.open) dom.repairDialog.close();
-  renderCard();
-  document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
-  showToast("Field repair started");
-}
-
-function startRepairMission() {
-  const repair = repairSession();
-  if (!repair || repair.phase !== "mission") return;
-  if (state.mission.active) {
-    if (state.mission.active.missionId === repair.mission.id) openMissionDialog();
-    else showToast("Finish the active mission first");
-    return;
-  }
-  if (dom.repairDialog.open) dom.repairDialog.close();
-  completedMissionRun = null;
-  completedMissionWeakestSkillId = null;
-  saveMissionRun(createMissionRun(repair.mission, Date.now(), {
-    hideFurigana: repair.round === "revisit",
-    mode: "production"
-  }));
-  renderMissionStep();
-  dom.missionDialog.showModal();
-}
-
-function continueRepair() {
-  const repair = repairSession();
-  if (!repair) {
-    startRepair();
-    return;
-  }
-  if (repair.phase === "cards") {
-    if (dom.repairDialog.open) dom.repairDialog.close();
-    renderCard();
-    document.querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
-  } else if (repair.phase === "mission") {
-    startRepairMission();
-  } else if (repair.phase === "waiting" && repair.revisitAt <= Date.now()) {
-    state = {
-      ...state,
-      repair: { ...state.repair, active: beginRepairRevisit(repair) }
-    };
-    saveState(state);
-    renderRepairLauncher();
-    startRepairMission();
-  } else if (repair.phase === "complete") {
-    dom.repairDialog.close();
-  }
-}
-
-function endRepair() {
-  const repair = repairSession();
-  if (!repair || !window.confirm("End this repair? Recorded card and production evidence will remain, and the field result will not change.")) return;
-  stopRepairTimer();
-  const ownsMission = state.mission.active?.missionId === repair.mission.id;
-  state = {
-    ...state,
-    repair: { ...state.repair, active: null },
-    mission: ownsMission ? { ...state.mission, active: null } : state.mission
-  };
-  saveState(state);
-  dom.repairDialog.close();
-  if (dom.missionDialog.open) dom.missionDialog.close();
-  renderCard();
-  showToast("Repair ended; evidence kept");
-}
-
-function logFieldOutcome(outcome) {
-  const now = Date.now();
-  const repair = archiveCompletedRepair(state.repair);
-  state = {
-    ...state,
-    updatedAt: now,
-    repair,
-    field: recordFieldOutcome(state.field, {
-      scenarioId: dom.fieldScenario.value,
-      outcome,
-      at: now
-    })
-  };
-  saveState(state);
-  renderCard();
-  renderFieldSummary(dom.fieldScenario.value);
-  showToast(`${fieldOutcomeLabels[outcome]} logged; BKT unchanged`);
-}
-
-function renderCard() {
-  currentItem = currentRepairCard(repairSession(), items)
-    ?? currentSessionCard(guidedSession(), items)
-    ?? selectNextItem(items, tree, state);
-  if (!currentItem) {
-    throw new Error("No practice item is available. Check the skill DAG and content pack.");
-  }
-
-  answered = false;
-  forcedFurigana = new Set();
-  dom.answer.hidden = true;
-  dom.reveal.hidden = false;
-  dom.nextCard.hidden = true;
-  dom.result.textContent = "";
-  dom.scenario.textContent = currentItem.scenarioTitle;
-  dom.mode.textContent = {
-    meaning: "Japanese → meaning",
-    reply: "Staff → reply",
-    focus: "Word zoom",
-    reading: "Kanji → reading",
-    "repair-recognition": "Field prompt → meaning"
-  }[currentItem.mode] ?? "Recognition";
-  dom.purpose.textContent = currentItem.scenarioPurpose;
-  dom.prompt.lang = "ja";
-  dom.prompt.classList.add("japanese-prompt");
-  dom.prompt.classList.toggle("focus-prompt", ["focus", "reading"].includes(currentItem.mode));
-  dom.instruction.textContent = currentItem.instruction ?? "Choose the best answer.";
-  renderPromptFurigana();
-  renderJapanese(dom.japanese, currentItem.answer.ja, { alwaysShow: true });
-  dom.reading.textContent = currentItem.answer.reading ?? "";
-  dom.reading.hidden = !currentItem.answer.reading
-    || currentItem.answer.reading === currentItem.answer.ja;
-  renderJapanese(dom.meaning, currentItem.answer.meaning, { alwaysShow: true });
-  renderJapanese(dom.note, currentItem.answer.note ?? "", { alwaysShow: true });
-  dom.wordZoom.hidden = !currentItem.zoom;
-  renderJapanese(dom.zoomContext, currentItem.zoom?.context ?? "", { alwaysShow: true });
-  renderJapanese(dom.zoomBreakdown, currentItem.zoom?.breakdown ?? "", { alwaysShow: true });
-  renderOptions(currentItem);
-  renderEvidence();
-  renderProgress();
-  renderRoute();
-  renderFieldSummary();
-  renderRepairLauncher();
-  renderFocus();
-  renderMissionSummary();
-  renderSessionLauncher();
-}
-
-function populateRouteScenarios() {
-  for (const scenario of content.scenarios.filter((entry) => entry.id !== "essentials")) {
-    for (const select of [dom.routeScenario, dom.fieldScenario]) {
-      const option = document.createElement("option");
-      option.value = scenario.id;
-      option.textContent = scenario.title;
-      select.append(option);
-    }
-  }
-}
-
-function populateMissions() {
-  for (const mission of missionPack.missions) {
-    const option = document.createElement("option");
-    option.value = mission.id;
-    option.textContent = mission.title;
-    dom.missionSelect.append(option);
-  }
-}
-
-function downloadProgress() {
-  const blob = new Blob([createProgressBackup(state)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `kaiwa-progress-${new Date().toISOString().slice(0, 10)}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  showToast("Progress backup downloaded");
-}
-
-function sessionIsValid(session) {
-  if (!session) return true;
-  if (!new Set(["cards", "mission", "complete"]).has(session.phase)) return false;
-  if (!Array.isArray(session.cardIds) || !Array.isArray(session.outcomes)) return false;
-  if (session.outcomes.length > session.cardIds.length) return false;
-  if (!session.cardIds.every((id) => items.some((item) => item.id === id))) return false;
-  return Boolean(missionById(missionPack, session.missionId));
+  if (repair?.mission?.id === id) return repair.mission;
+  return missionById(missionPack, id);
+}
+
+function latestRepairOffer() {
+  return [...(state.field?.events ?? [])].reverse().find((event) =>
+    REPAIRABLE_FIELD_OUTCOMES.includes(event.outcome)
+    && !repairHandledFieldEvent(state.repair, event.id)
+    && missionPack.missions.some((mission) => mission.scenarioId === event.scenarioId)
+  ) ?? null;
 }
 
 function repairIsValid(repair) {
@@ -1858,21 +258,1251 @@ function repairIsValid(repair) {
     && repair.mission.steps.at(-1)?.targetSkillId === "abort.wakarimasen";
 }
 
+function sessionIsValid(session) {
+  if (!session) return true;
+  if (!new Set(["cards", "mission", "complete"]).has(session.phase)) return false;
+  if (!Array.isArray(session.cardIds) || !Array.isArray(session.outcomes)) return false;
+  if (session.outcomes.length > session.cardIds.length) return false;
+  if (!session.cardIds.every((id) => items.some((item) => item.id === id))) return false;
+  return Boolean(missionById(missionPack, session.missionId));
+}
+
 function repairActivityState() {
-  let repaired = false;
+  let changed = false;
   if (!repairIsValid(state.repair?.active)) {
     state = { ...state, repair: { ...state.repair, active: null } };
-    repaired = true;
+    changed = true;
   }
   if (state.mission.active && !missionForId(state.mission.active.missionId)) {
     state = { ...state, mission: { ...state.mission, active: null } };
-    repaired = true;
+    changed = true;
   }
   if (!sessionIsValid(state.session?.active)) {
     state = { ...state, session: { ...state.session, active: null } };
-    repaired = true;
+    changed = true;
   }
-  if (repaired) saveState(state);
+  if (changed) save();
+}
+
+function primaryPracticeLabel() {
+  const repair = repairSession();
+  if (repair && repair.phase !== "complete") return "Resume repair";
+  if (state.mission.active) return "Resume mission";
+  const session = guidedSession();
+  if (session?.phase === "complete") return "View session";
+  if (session) return "Resume session";
+  return "Start practice";
+}
+
+function renderHome() {
+  const next = selectNextItem(items, tree, state);
+  const ready = Object.values(state.skills).filter((skill) => skillIsReady(tree, skill)).length;
+  screenHeading("TODAY'S TRIP LOOP", "What do you need right now?", "Practice opens the strongest next step automatically. Menu reveals every other tool one at a time.");
+  setChrome({ title: "Practice the next exchange.", context: "Home · two choices", progress: 0.08 });
+
+  const card = addDataCard("NEXT PRIORITY");
+  const nextTitle = element("p", "candidate-text");
+  appendJapanese(nextTitle, next?.scenarioTitle ?? "Loading…", { alwaysShow: true });
+  card.append(nextTitle, element("p", "screen-copy", next ? next.scenarioPurpose : "No practice item is currently available."));
+  const orbit = element("div", "progress-orbit");
+  orbit.style.setProperty("--value", `${Math.min(360, ready / Math.max(1, tree.nodes.length) * 360)}deg`);
+  orbit.append(element("span", "", `${ready}/${tree.nodes.length}`));
+  dom.screen.append(orbit, element("p", "screen-copy", `${state.totalReviews} objective checks · ${state.totalProduction ?? 0} spoken observations · progress stays on this device.`));
+
+  setActions(
+    { label: "Menu", onClick: () => show("tools", { index: 0 }) },
+    { label: primaryPracticeLabel(), onClick: resumePractice }
+  );
+}
+
+function resumePractice() {
+  const repair = repairSession();
+  if (repair && repair.phase !== "complete") {
+    if (repair.phase === "cards") return showCard("repair");
+    if (repair.phase === "mission" && state.mission.active) return show("mission-turn");
+    return show("repair-overview");
+  }
+  if (state.mission.active) return show("mission-turn");
+  const session = guidedSession();
+  if (!session) return show("session-intro");
+  if (session.phase === "cards") return showCard("session");
+  if (session.phase === "mission") return show("session-overview");
+  return show("session-summary");
+}
+
+function toolChoices() {
+  const result = [
+    { id: "abort", title: "Emergency exit", copy: "Show the fixed abort line immediately.", open: () => show("abort") },
+    { id: "sheet", title: "Conversation sheet", copy: "Browse one allowed line at a time for a live exchange.", open: () => showScenarioChooser("sheet") },
+    { id: "field", title: "Log a real conversation", copy: "Record what happened through three yes/no questions.", open: () => showScenarioChooser("field") }
+  ];
+  if (repairSession() || latestRepairOffer()) {
+    result.push({ id: "repair", title: "Field repair", copy: "Close the loop on the latest difficult exchange.", open: () => show("repair-overview") });
+  }
+  result.push(
+    { id: "card", title: "One quick card", copy: "Let the cram scheduler pick a single Japanese-first check.", open: () => showCard("solo") },
+    { id: "mission", title: "Closed-loop mission", copy: "Choose a fixed scenario, mode, and furigana level step by step.", open: () => showMissionChooser() },
+    { id: "route", title: "Next real event", copy: "Boost one scenario because a real conversation is approaching.", open: () => show("route-home") },
+    { id: "map", title: "Skill path", copy: "Browse scenarios and skills without opening a dense dashboard.", open: () => show("map-home") },
+    { id: "roleplay", title: "Optional roleplay", copy: "Use the routed partner only when the HTTP provider is configured.", open: () => openRoleplay() },
+    { id: "share", title: "Open on another phone", copy: "Show the QR card for the public Vercel site.", open: () => show("share") },
+    { id: "progress", title: "Progress and backup", copy: "Download, restore, or reset local state through confirmations.", open: () => show("progress-menu", { index: 0 }) },
+    { id: "home", title: "Back home", copy: "Return to the recommended next practice step.", open: () => show("home") }
+  );
+  return result;
+}
+
+function renderTools() {
+  const tools = toolChoices();
+  const index = Math.min(screen.data.index ?? 0, tools.length - 1);
+  const tool = tools[index];
+  screenHeading("TOOL MENU", tool.title, tool.copy);
+  setChrome({ title: "Choose one tool.", context: `Menu · ${index + 1} of ${tools.length}`, progress: 0.14 });
+  const card = addDataCard("ONE TOOL AT A TIME");
+  card.append(element("p", "candidate-text", tool.title), element("p", "screen-copy", "Choose it, or move to the next tool."));
+  setActions(
+    { label: "Not this →", onClick: () => show("tools", { index: cycleIndex(index, tools.length) }) },
+    { label: tool.id === "home" ? "Go home" : "Open", onClick: tool.open }
+  );
+}
+
+function chooserScenarios(flow) {
+  return [...content.scenarios, { id: "__back", title: "Back to menu", purpose: "Leave without changing anything." }];
+}
+
+function showScenarioChooser(flow, index = 0) {
+  show("scenario-chooser", { flow, index });
+}
+
+function renderScenarioChooser() {
+  const { flow, index = 0 } = screen.data;
+  const scenarios = chooserScenarios(flow);
+  const scenario = scenarios[index];
+  const titles = {
+    sheet: "Which live conversation?",
+    field: "Which conversation happened?",
+    route: "Which event is coming up?",
+    roleplay: "Which partner scenario?"
+  };
+  screenHeading("CHOOSE A SCENARIO", scenario.title, scenario.purpose);
+  setChrome({ title: titles[flow] ?? "Choose a scenario.", context: `${index + 1} of ${scenarios.length}`, progress: 0.22 });
+  if (scenario.id !== "__back") {
+    const counts = fieldCounts(state.field, scenario.id);
+    addMeta(`${scenario.items.length} cards`, `${scenario.allowedUserLines.length} fixed lines`, `${Object.values(counts).reduce((a, b) => a + b, 0)} field logs`);
+  }
+  setActions(
+    { label: "Another →", onClick: () => showScenarioChooser(flow, cycleIndex(index, scenarios.length)) },
+    { label: scenario.id === "__back" ? "Back" : "Choose", onClick: () => chooseScenario(flow, scenario) }
+  );
+}
+
+function chooseScenario(flow, scenario) {
+  if (scenario.id === "__back") return show("tools", { index: 0 });
+  if (flow === "sheet") return show("sheet-line", { scenarioId: scenario.id, lineIndex: 0 });
+  if (flow === "field") return show("field-question", { scenarioId: scenario.id, step: FIELD_DECISION_START });
+  if (flow === "route") return show("route-time", { scenarioId: scenario.id, index: 0 });
+  if (flow === "roleplay") return show("roleplay-line", { scenarioId: scenario.id, index: 0 });
+}
+
+function showCard(context, explicitItemId = null) {
+  let item;
+  if (context === "repair") item = currentRepairCard(repairSession(), items);
+  else if (context === "session") item = currentSessionCard(guidedSession(), items);
+  else item = items.find((candidate) => candidate.id === explicitItemId) ?? selectNextItem(items, tree, state);
+  if (!item) return show("home");
+  if (cardUi?.itemId !== item.id) {
+    cardUi = { itemId: item.id, context, optionIndex: 0, rejectedCorrect: false, answered: false, correct: null };
+  } else {
+    cardUi.context = context;
+  }
+  show("card", { context, itemId: item.id });
+}
+
+function renderCard() {
+  const item = items.find((candidate) => candidate.id === screen.data.itemId)
+    ?? repairSession()?.recognitionCard;
+  if (!item) return show("home");
+  const skill = state.skills[item.skillId];
+  const context = screen.data.context;
+  const progress = context === "session"
+    ? `${guidedSession().outcomes.length} of ${guidedSession().cardIds.length}`
+    : context === "repair"
+      ? `${repairSession().outcomes.length} of ${repairSession().cardIds.length}`
+      : "scheduler selected";
+  screenHeading(item.scenarioTitle, "Read the Japanese first.", item.instruction);
+  setChrome({ title: "Is this the answer?", context: `${progress} · ${Math.round(probabilityKnown(skill) * 100)}% BKT`, progress: cardUi.answered ? 0.72 : 0.52 });
+
+  const prompt = element("p", "prompt-japanese");
+  appendJapanese(prompt, item.prompt, { neverShow: item.mode === "reading" });
+  dom.screen.append(prompt);
+  addMeta(item.mode === "reading" ? "No furigana test" : "Japanese → meaning", `${item.options.length} candidates`);
+
+  if (!cardUi.answered) {
+    const option = item.options[cardUi.optionIndex];
+    const candidate = element("article", "candidate-card");
+    candidate.append(element("p", "candidate-label", `Candidate ${cardUi.optionIndex + 1} of ${item.options.length}`));
+    const label = element("p", "candidate-text");
+    appendJapanese(label, option.label, { alwaysShow: true });
+    candidate.append(label);
+    dom.screen.append(candidate);
+    setActions(
+      { label: "No", onClick: () => answerCardCandidate(item, false) },
+      { label: "Yes", onClick: () => answerCardCandidate(item, true) }
+    );
+    return;
+  }
+
+  const result = element("article", "result-card");
+  result.dataset.result = cardUi.correct ? "correct" : "incorrect";
+  result.append(element("p", "result-label", cardUi.correct ? "Correct" : "Review this one"));
+  const japanese = element("p", "line-japanese");
+  appendJapanese(japanese, item.answer.ja, { alwaysShow: true });
+  result.append(japanese);
+  if (item.answer.reading) result.append(element("p", "answer-reading", item.answer.reading));
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, item.answer.meaning, { alwaysShow: true });
+  result.append(meaning);
+  if (item.answer.note) {
+    const note = element("p", "screen-copy");
+    appendJapanese(note, item.answer.note, { alwaysShow: true });
+    result.append(note);
+  }
+  if (item.zoom) {
+    const zoom = element("aside", "word-zoom");
+    zoom.append(element("h3", "", "WORD ZOOM"));
+    const zoomContext = element("p");
+    appendJapanese(zoomContext, item.zoom.context, { alwaysShow: true });
+    const zoomBreakdown = element("p", "screen-copy");
+    appendJapanese(zoomBreakdown, item.zoom.breakdown, { alwaysShow: true });
+    zoom.append(zoomContext, zoomBreakdown);
+    result.append(zoom);
+  }
+  dom.screen.append(result);
+  const left = context === "repair"
+    ? { label: "End repair", onClick: confirmEndRepair }
+    : context === "session"
+      ? { label: "End session", onClick: confirmEndSession }
+      : { label: "Home", onClick: () => show("home") };
+  setActions(left, { label: nextCardLabel(context), onClick: () => continueAfterCard(context) });
+}
+
+function answerCardCandidate(item, accepted) {
+  const result = candidateAnswer({
+    options: item.options,
+    index: cardUi.optionIndex,
+    rejectedCorrect: cardUi.rejectedCorrect,
+    accepted
+  });
+  if (!result.complete) {
+    cardUi.optionIndex = result.nextIndex;
+    cardUi.rejectedCorrect = result.rejectedCorrect;
+    return render();
+  }
+  cardUi.answered = true;
+  cardUi.correct = result.correct;
+  applyCardResult(item, result.correct);
+  render();
+}
+
+function applyCardResult(item, correct, now = Date.now()) {
+  const repair = repairSession();
+  const repairItem = currentRepairCard(repair, items);
+  const session = guidedSession();
+  const sessionItem = currentSessionCard(session, items);
+  state = applyObservation(state, item, correct, now);
+  if (repairItem?.id === item.id) {
+    state = { ...state, repair: { ...state.repair, active: recordRepairCard(repair, item, correct, now) } };
+  }
+  if (sessionItem?.id === item.id) {
+    state = { ...state, session: { ...state.session, active: recordSessionCard(session, item, correct, now) } };
+  }
+  save();
+}
+
+function nextCardLabel(context) {
+  if (context === "repair" && repairSession()?.phase === "mission") return "Speak next";
+  if (context === "session" && guidedSession()?.phase === "mission") return "Speak next";
+  return "Next card";
+}
+
+function continueAfterCard(context) {
+  cardUi = null;
+  if (context === "repair") {
+    return repairSession()?.phase === "cards" ? showCard("repair") : show("repair-overview");
+  }
+  if (context === "session") {
+    return guidedSession()?.phase === "cards" ? showCard("session") : show("session-overview");
+  }
+  showCard("solo");
+}
+
+function renderSessionIntro() {
+  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Three weak phrase checks, three contextual readings without furigana, then one speak-first closed-loop mission.");
+  setChrome({ title: "Ready to begin?", context: "Guided practice · step 1", progress: 0.18 });
+  const stages = element("ol", "stage-list");
+  ["Recognize three Japanese prompts", "Read three difficult words", "Speak the fixed loop and abort"].forEach((label, index) => {
+    stages.append(element("li", index === 0 ? "current" : "", label));
+  });
+  dom.screen.append(stages);
+  setActions(
+    { label: "Menu", onClick: () => show("tools", { index: 0 }) },
+    { label: "Start", onClick: startGuidedSession }
+  );
+}
+
+function startGuidedSession() {
+  const repair = repairSession();
+  if (repair && repair.phase !== "complete") return show("repair-overview");
+  if (state.mission.active) return show("mission-turn");
+  state = {
+    ...state,
+    repair: archiveCompletedRepair(state.repair),
+    session: archiveCompletedSession(state.session)
+  };
+  const active = buildGuidedSession({ items, tree, readings, missionPack, state, now: Date.now() });
+  state = { ...state, session: { ...state.session, active } };
+  save();
+  cardUi = null;
+  showCard("session");
+}
+
+function renderSessionOverview() {
+  const session = guidedSession();
+  if (!session) return show("session-intro");
+  if (session.phase === "cards") return showCard("session");
+  if (session.phase === "complete") return show("session-summary");
+  const mission = missionById(missionPack, session.missionId);
+  screenHeading("GUIDED SESSION", "Cards complete. Speak now.", mission.purpose);
+  setChrome({ title: "Finish the closed loop.", context: "Guided practice · spoken mission", progress: 0.82 });
+  addDataCard("SELECTED FROM YOUR EVIDENCE", mission.title);
+  const stages = element("ol", "stage-list");
+  stages.append(element("li", "done", "Three weak phrases"), element("li", "done", "Three no-furigana readings"), element("li", "current", "Speak-first mission"));
+  dom.screen.append(stages);
+  setActions(
+    { label: "End session", onClick: confirmEndSession },
+    { label: state.mission.active ? "Resume mission" : "Start mission", onClick: () => startGuidedMission(mission) }
+  );
+}
+
+function startGuidedMission(mission) {
+  if (!state.mission.active) startMissionRun(mission, { mode: "production", hideFurigana: false });
+  show("mission-turn");
+}
+
+function renderSessionSummary() {
+  const session = guidedSession();
+  if (!session) return show("home");
+  const summary = summarizeGuidedSession(session, { state, tree, readings, items });
+  screenHeading("SESSION COMPLETE", "The loop is closed.", "Recognition, reading, and speaking remain separate evidence channels.");
+  setChrome({ title: "Session complete.", context: "Guided practice · summary", progress: 1 });
+  const metrics = element("ul", "metric-list");
+  metrics.append(
+    metric(`${summary.correctCards}/${summary.cardsTotal}`, "objective checks correct"),
+    metric(`${summary.readingCorrect}/${summary.readingTotal}`, "no-furigana readings correct"),
+    metric(summary.missionOutcome ?? "complete", "spoken mission outcome")
+  );
+  if (summary.production) metrics.append(metric(`${summary.production.clean}/${summary.production.total}`, "spoken lines clean"));
+  dom.screen.append(metrics);
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    { label: "Again", onClick: startGuidedSession }
+  );
+}
+
+function metric(value, label) {
+  const item = element("li");
+  item.append(element("span", "metric-value", String(value)), document.createTextNode(label));
+  return item;
+}
+
+function confirmEndSession() {
+  show("confirm", {
+    kicker: "END SESSION",
+    title: "Keep the evidence and stop?",
+    copy: "Completed checks and spoken observations stay recorded.",
+    no: () => resumePractice(),
+    yes: endGuidedSession
+  });
+}
+
+function endGuidedSession() {
+  const session = guidedSession();
+  const ownsMission = session?.missionId === state.mission.active?.missionId;
+  state = {
+    ...state,
+    session: { ...state.session, active: null },
+    mission: ownsMission ? { ...state.mission, active: null } : state.mission
+  };
+  save();
+  show("home");
+}
+
+function renderAbort() {
+  const line = content.scenarios.flatMap((scenario) => scenario.allowedUserLines)
+    .find((candidate) => candidate.skillId === "abort.wakarimasen");
+  screenHeading("POLITE EXIT", "Say this once. Then show the screen.", "The abort is always available and never requires network access.");
+  setChrome({ title: "Need out?", context: "Safety line", progress: 1 });
+  const card = element("article", "line-card");
+  const japanese = element("p", "prompt-japanese");
+  appendJapanese(japanese, line.ja, { alwaysShow: true });
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, line.meaning, { alwaysShow: true });
+  card.append(japanese, meaning);
+  dom.screen.append(card);
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    { label: "Phone sheet", onClick: () => showScenarioChooser("sheet") }
+  );
+}
+
+function renderSheetLine() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const lineIndex = screen.data.lineIndex ?? 0;
+  const line = scenario.allowedUserLines[lineIndex];
+  screenHeading("LIVE PHONE SHEET", scenario.title, scenario.purpose);
+  setChrome({ title: "Only use these lines.", context: `Line ${lineIndex + 1} of ${scenario.allowedUserLines.length}`, progress: (lineIndex + 1) / scenario.allowedUserLines.length });
+  const card = element("article", line.skillId === scenario.abortSkillId ? "line-card result-card" : "line-card");
+  if (line.skillId === scenario.abortSkillId) card.dataset.result = "incorrect";
+  const japanese = element("p", "line-japanese");
+  appendJapanese(japanese, line.ja, { alwaysShow: true });
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, line.meaning, { alwaysShow: true });
+  card.append(japanese, meaning);
+  dom.screen.append(card);
+  setActions(
+    { label: "Done", onClick: () => show("home") },
+    { label: "Next line →", onClick: () => show("sheet-line", { scenarioId: scenario.id, lineIndex: cycleIndex(lineIndex, scenario.allowedUserLines.length) }) }
+  );
+}
+
+function renderFieldQuestion() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const decision = fieldDecision(screen.data.step);
+  screenHeading("REAL CONVERSATION", decision.prompt, "Answer honestly. This changes priority but never claims BKT mastery.");
+  setChrome({ title: scenario.title, context: `Field log · ${screen.data.step.replace("_", " ")}`, progress: screen.data.step === "worked" ? 0.35 : screen.data.step === "phone_sheet" ? 0.62 : 0.82 });
+  addDataCard("SCENARIO", scenario.purpose);
+  setActions(
+    { label: "No", onClick: () => resolveFieldDecision(false) },
+    { label: "Yes", onClick: () => resolveFieldDecision(true) }
+  );
+}
+
+function resolveFieldDecision(answer) {
+  const result = answerFieldDecision(screen.data.step, answer);
+  if (result.next) return show("field-question", { scenarioId: screen.data.scenarioId, step: result.next });
+  const now = Date.now();
+  state = {
+    ...state,
+    updatedAt: now,
+    repair: archiveCompletedRepair(state.repair),
+    field: recordFieldOutcome(state.field, { scenarioId: screen.data.scenarioId, outcome: result.outcome, at: now })
+  };
+  save();
+  show("field-result", { scenarioId: screen.data.scenarioId, outcome: result.outcome });
+}
+
+function renderFieldResult() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const event = latestFieldOutcome(state.field, scenario.id);
+  const canRepair = event && REPAIRABLE_FIELD_OUTCOMES.includes(event.outcome)
+    && missionPack.missions.some((mission) => mission.scenarioId === scenario.id);
+  screenHeading("FIELD RESULT SAVED", FIELD_LABELS[screen.data.outcome], "The real result is immutable. Practice may respond to it, but cannot rewrite it.");
+  setChrome({ title: scenario.title, context: "Field log · saved locally", progress: 1 });
+  const counts = fieldCounts(state.field, scenario.id);
+  const list = element("ul", "metric-list");
+  Object.entries(FIELD_LABELS).forEach(([key, label]) => list.append(metric(counts[key], label)));
+  dom.screen.append(list);
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    canRepair
+      ? { label: "Repair now", onClick: () => startRepair(event) }
+      : { label: "Practice next", onClick: () => showCard("solo") }
+  );
+}
+
+function startRepair(event = latestRepairOffer()) {
+  if (!event) return show("home");
+  if (guidedSession() && guidedSession().phase !== "complete") return show("session-overview");
+  if (state.mission.active) return show("mission-turn");
+  state = {
+    ...state,
+    repair: archiveCompletedRepair(state.repair),
+    session: archiveCompletedSession(state.session)
+  };
+  const active = buildRepairSession({ event, items, missionPack, state, now: Date.now() });
+  state = { ...state, repair: { ...state.repair, active } };
+  save();
+  cardUi = null;
+  showCard("repair");
+}
+
+function repairWaitText(repair, now = Date.now()) {
+  const remaining = Math.max(0, repair.revisitAt - now);
+  if (remaining === 0) return "The ten-minute revisit is ready.";
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.ceil((remaining % 60000) / 1000);
+  return `Revisit in ${minutes}:${String(seconds).padStart(2, "0")}. This countdown survives refresh.`;
+}
+
+function renderRepairOverview() {
+  const repair = repairSession();
+  const offer = latestRepairOffer();
+  if (!repair) {
+    if (!offer) {
+      screenHeading("FIELD REPAIR", "Nothing needs repair.", "Log a difficult real conversation first.");
+      setChrome({ title: "Field repair", context: "No pending result", progress: 0.1 });
+      return setActions({ label: "Home", onClick: () => show("home") }, { label: "Log result", onClick: () => showScenarioChooser("field") });
+    }
+    const scenario = scenarioById(offer.scenarioId);
+    screenHeading("FIELD REPAIR", `Repair ${scenario.title}.`, `${FIELD_LABELS[offer.outcome]} remains the real result. Two objective checks and a spoken revisit respond to it.`);
+    setChrome({ title: "Close the field loop.", context: "Repair · ready", progress: 0.18 });
+    return setActions({ label: "Not now", onClick: () => show("home") }, { label: "Start repair", onClick: () => startRepair(offer) });
+  }
+  const scenario = scenarioById(repair.scenarioId);
+  const phaseCopy = {
+    cards: `${repair.outcomes.length}/${repair.cardIds.length} objective checks complete.`,
+    mission: repair.round === "revisit" ? "Repeat the same two spoken lines without furigana." : "Retrieve the weakest fixed response and timed abort.",
+    waiting: repairWaitText(repair),
+    complete: `Repair complete. The field log still says ${FIELD_LABELS[repair.fieldOutcome]}.`
+  }[repair.phase];
+  screenHeading("FIELD REPAIR", scenario.title, phaseCopy);
+  setChrome({ title: "Repair one break.", context: `Repair · ${repair.phase}`, progress: { cards: 0.28, mission: 0.62, waiting: 0.82, complete: 1 }[repair.phase] });
+  const stages = element("ol", "stage-list");
+  const firstDone = repair.outcomes.length > 0;
+  const readingDone = repair.outcomes.length > 1;
+  const spokenDone = ["waiting", "complete"].includes(repair.phase) || repair.round === "revisit";
+  [
+    ["Recognize the partner prompt", firstDone],
+    ["Read one difficult word", readingDone],
+    ["Say the fixed response and abort", spokenDone],
+    ["Ten-minute no-furigana revisit", repair.phase === "complete"]
+  ].forEach(([label, done], index) => stages.append(element("li", done ? "done" : index === [firstDone, readingDone, spokenDone, repair.phase === "complete"].findIndex((value) => !value) ? "current" : "", label)));
+  dom.screen.append(stages);
+  if (repair.phase === "waiting") {
+    const due = repair.revisitAt <= Date.now();
+    setActions(
+      { label: "Home", onClick: () => show("home") },
+      { label: due ? "Start revisit" : "Not ready", disabled: !due, onClick: beginRevisit }
+    );
+    startTicker(() => {
+      if (repair.revisitAt <= Date.now()) render();
+      else {
+        const copy = dom.screen.querySelector(".screen-copy");
+        if (copy) copy.textContent = repairWaitText(repair);
+      }
+    });
+    return;
+  }
+  if (repair.phase === "complete") {
+    const summary = repair.revisit;
+    dom.screen.append(metricCard(`${summary.clean}/${summary.total}`, `revisit lines clean · abort ${(summary.abortResponseMs / 1000).toFixed(1)}s`));
+    return setActions(
+      { label: "Home", onClick: () => show("home") },
+      { label: "Archive", onClick: archiveRepair }
+    );
+  }
+  setActions(
+    { label: "End repair", onClick: confirmEndRepair },
+    { label: repair.phase === "cards" ? "Continue checks" : state.mission.active ? "Resume speaking" : "Start speaking", onClick: continueRepair }
+  );
+}
+
+function metricCard(value, label) {
+  const card = element("article", "data-card");
+  card.append(element("span", "metric-value", value), element("p", "screen-copy", label));
+  return card;
+}
+
+function continueRepair() {
+  const repair = repairSession();
+  if (!repair) return startRepair();
+  if (repair.phase === "cards") return showCard("repair");
+  if (repair.phase === "mission") {
+    if (!state.mission.active) startMissionRun(repair.mission, { mode: "production", hideFurigana: repair.round === "revisit" });
+    return show("mission-turn");
+  }
+}
+
+function beginRevisit() {
+  const repair = repairSession();
+  if (!repair || repair.revisitAt > Date.now()) return;
+  state = { ...state, repair: { ...state.repair, active: beginRepairRevisit(repair) } };
+  save();
+  continueRepair();
+}
+
+function archiveRepair() {
+  state = { ...state, repair: archiveCompletedRepair(state.repair) };
+  save();
+  show("home");
+}
+
+function confirmEndRepair() {
+  show("confirm", {
+    kicker: "END REPAIR",
+    title: "Keep the evidence and stop?",
+    copy: "The original field result and all completed evidence remain unchanged.",
+    no: () => show("repair-overview"),
+    yes: endRepair
+  });
+}
+
+function endRepair() {
+  const repair = repairSession();
+  const ownsMission = repair?.mission?.id === state.mission.active?.missionId;
+  state = {
+    ...state,
+    repair: { ...state.repair, active: null },
+    mission: ownsMission ? { ...state.mission, active: null } : state.mission
+  };
+  save();
+  show("home");
+}
+
+function showMissionChooser(index = 0) {
+  show("mission-chooser", { index });
+}
+
+function renderMissionChooser() {
+  if (state.mission.active) return show("mission-turn");
+  const choices = [...missionPack.missions, { id: "__back", title: "Back to menu", purpose: "Leave without starting a mission." }];
+  const index = screen.data.index ?? 0;
+  const mission = choices[index];
+  screenHeading("CHOOSE A MISSION", mission.title, mission.purpose);
+  setChrome({ title: "Which closed loop?", context: `${index + 1} of ${choices.length}`, progress: 0.2 });
+  if (mission.id !== "__back") {
+    const stats = state.mission.stats?.[mission.id];
+    addMeta(`${mission.steps.length} turns`, `${stats?.runs ?? 0} prior runs`, stats?.lastOutcome ? `last: ${stats.lastOutcome}` : "not run yet");
+  }
+  setActions(
+    { label: "Another →", onClick: () => showMissionChooser(cycleIndex(index, choices.length)) },
+    { label: mission.id === "__back" ? "Back" : "Choose", onClick: () => mission.id === "__back" ? show("tools", { index: 0 }) : show("mission-mode", { missionId: mission.id }) }
+  );
+}
+
+function renderMissionMode() {
+  const mission = missionById(missionPack, screen.data.missionId);
+  screenHeading("MISSION MODE", "Speak before seeing the line?", "Yes records separate production evidence. No tests objective response recognition through the same fixed loop.");
+  setChrome({ title: mission.title, context: "Mission setup · mode", progress: 0.34 });
+  setActions(
+    { label: "No · choose", onClick: () => show("mission-challenge", { missionId: mission.id, mode: "recognition" }) },
+    { label: "Yes · speak", onClick: () => show("mission-challenge", { missionId: mission.id, mode: "production" }) }
+  );
+}
+
+function renderMissionChallenge() {
+  const mission = missionById(missionPack, screen.data.missionId);
+  screenHeading("FURIGANA CHECK", "Hide furigana for this run?", "Choose yes only when you want every mission prompt and response unsupported.");
+  setChrome({ title: mission.title, context: `Mission setup · ${screen.data.mode}`, progress: 0.46 });
+  setActions(
+    { label: "No · supported", onClick: () => launchManualMission(false) },
+    { label: "Yes · hide it", onClick: () => launchManualMission(true) }
+  );
+}
+
+function launchManualMission(hideFurigana) {
+  const mission = missionById(missionPack, screen.data.missionId);
+  startMissionRun(mission, { mode: screen.data.mode, hideFurigana });
+  show("mission-turn");
+}
+
+function startMissionRun(mission, options) {
+  completedMissionRun = null;
+  missionChoiceUi = null;
+  state = { ...state, mission: { ...state.mission, active: createMissionRun(mission, Date.now(), options) } };
+  save();
+}
+
+function ensureMissionChoice(run, step) {
+  const key = `${run.missionId}.${run.stepIndex}`;
+  if (missionChoiceUi?.key !== key) missionChoiceUi = { key, optionIndex: 0, rejectedCorrect: false };
+}
+
+function renderMissionTurn() {
+  const run = state.mission.active;
+  const mission = missionForId(run?.missionId);
+  if (!run || !mission) return show("home");
+  const step = mission.steps[run.stepIndex];
+  ensureMissionChoice(run, step);
+  const isAbort = step.targetSkillId === "abort.wakarimasen";
+  screenHeading(isAbort ? "OFF SCRIPT" : "PARTNER", `Turn ${run.stepIndex + 1} of ${mission.steps.length}`, run.mode === "production"
+    ? isAbort ? "Say the abort now. Target five seconds." : "Say your fixed response aloud. No microphone is listening."
+    : isAbort ? "Choose the pre-decided recovery. Do not improvise." : "Decide whether the candidate is your fixed response.");
+  setChrome({ title: mission.title, context: `${run.mode} · ${run.hideFurigana ? "no furigana" : "adaptive furigana"}`, progress: 0.48 + (run.stepIndex / mission.steps.length) * 0.38 });
+  const prompt = element("p", "prompt-japanese");
+  appendJapanese(prompt, step.prompt, { neverShow: run.hideFurigana });
+  dom.screen.append(prompt);
+  if (run.currentHintUsed || run.awaitingAdvance) {
+    const meaning = element("p", "line-meaning");
+    appendJapanese(meaning, step.meaning, { alwaysShow: true });
+    dom.screen.append(meaning);
+  }
+
+  if (run.awaitingAdvance) return renderMissionFeedback(run, mission, step);
+  if (run.mode === "production") return renderProductionDecision(run, mission, step);
+  renderRecognitionDecision(run, mission, step);
+}
+
+function renderProductionDecision(run, mission, step) {
+  const isAbort = step.targetSkillId === "abort.wakarimasen";
+  if (!run.productionRevealed) {
+    const timer = element("p", "timer", "0.0s");
+    dom.screen.append(timer);
+    const update = () => {
+      const elapsed = Math.max(0, Date.now() - run.stepStartedAt);
+      timer.textContent = isAbort
+        ? `${(elapsed / 1000).toFixed(1)}s · abort target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s`
+        : `${(elapsed / 1000).toFixed(1)}s · speak before revealing`;
+      timer.classList.toggle("late", isAbort && elapsed > ABORT_TARGET_MS);
+    };
+    update();
+    startTicker(update, 100);
+    setActions(
+      { label: "Need help", onClick: revealProductionWithHelp },
+      { label: "I spoke", onClick: revealProduction }
+    );
+    return;
+  }
+  const line = missionLines.get(step.targetSkillId);
+  const card = element("article", "line-card");
+  card.append(element("p", "candidate-label", `Compare · ${(run.productionResponseMs / 1000).toFixed(1)}s`));
+  const japanese = element("p", "line-japanese");
+  appendJapanese(japanese, line.ja, { alwaysShow: !run.hideFurigana, neverShow: run.hideFurigana });
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, line.meaning, { alwaysShow: true });
+  card.append(japanese, meaning);
+  dom.screen.append(card, element("p", "instruction", "Did you say it correctly?"));
+  setActions(
+    { label: "No", onClick: () => gradeProduction(false) },
+    { label: "Yes", onClick: () => gradeProduction(true) }
+  );
+}
+
+function revealProductionWithHelp() {
+  const run = revealMissionHint(state.mission.active);
+  state = { ...state, mission: { ...state.mission, active: revealProductionAnswer(run) } };
+  save();
+  render();
+}
+
+function revealProduction() {
+  state = { ...state, mission: { ...state.mission, active: revealProductionAnswer(state.mission.active) } };
+  save();
+  render();
+}
+
+function gradeProduction(correct) {
+  const active = state.mission.active;
+  const mission = missionForId(active.missionId);
+  const run = gradeProductionStep(active, mission, correct ? "clean" : "miss");
+  state = applyProductionObservation(state, run.observations.at(-1));
+  state = { ...state, mission: { ...state.mission, active: run } };
+  save();
+  render();
+}
+
+function renderRecognitionDecision(run, mission, step) {
+  const skillId = step.choiceSkillIds[missionChoiceUi.optionIndex];
+  const line = missionLines.get(skillId);
+  const candidate = element("article", "candidate-card");
+  candidate.append(element("p", "candidate-label", `Candidate ${missionChoiceUi.optionIndex + 1} of ${step.choiceSkillIds.length}`));
+  const japanese = element("p", "candidate-text candidate-japanese");
+  appendJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
+  candidate.append(japanese);
+  if (!run.hideFurigana) {
+    const meaning = element("p", "line-meaning");
+    appendJapanese(meaning, line.meaning, { alwaysShow: true });
+    candidate.append(meaning);
+  }
+  dom.screen.append(candidate);
+  setActions(
+    { label: "No", onClick: () => answerMissionCandidate(false) },
+    { label: "Yes", onClick: () => answerMissionCandidate(true) }
+  );
+}
+
+function answerMissionCandidate(accepted) {
+  const active = state.mission.active;
+  const mission = missionForId(active.missionId);
+  const step = mission.steps[active.stepIndex];
+  const options = step.choiceSkillIds.map((id) => ({ id, correct: id === step.targetSkillId }));
+  const decision = candidateAnswer({ options, index: missionChoiceUi.optionIndex, rejectedCorrect: missionChoiceUi.rejectedCorrect, accepted });
+  if (!decision.complete) {
+    missionChoiceUi.optionIndex = decision.nextIndex;
+    missionChoiceUi.rejectedCorrect = decision.rejectedCorrect;
+    return render();
+  }
+  const selected = accepted
+    ? options[missionChoiceUi.optionIndex].id
+    : options.find((option) => !option.correct).id;
+  const run = answerMissionStep(active, mission, selected);
+  const observation = run.observations.at(-1);
+  const evidenceCorrect = observation.evidenceCorrect && !missionChoiceUi.rejectedCorrect;
+  const observationItem = {
+    id: `mission.${mission.id}.${step.id}.${observation.observedAt}`,
+    skillId: observation.skillId,
+    options: step.choiceSkillIds.map((id) => ({ id }))
+  };
+  state = applyObservation(state, observationItem, evidenceCorrect, observation.observedAt, { source: "mission" });
+  if (evidenceCorrect !== observation.evidenceCorrect) {
+    const observations = [...run.observations];
+    observations[observations.length - 1] = { ...observation, evidenceCorrect };
+    state = { ...state, mission: { ...state.mission, active: { ...run, observations } } };
+  } else {
+    state = { ...state, mission: { ...state.mission, active: run } };
+  }
+  save();
+  render();
+}
+
+function renderMissionFeedback(run, mission, step) {
+  const observation = run.observations.at(-1);
+  const line = missionLines.get(step.targetSkillId);
+  const correct = run.mode === "production" ? observation.grade === "clean" : observation.evidenceCorrect;
+  const card = element("article", "result-card");
+  card.dataset.result = correct ? "correct" : "incorrect";
+  const label = run.mode === "production"
+    ? observation.grade === "clean" ? "Said cleanly" : observation.grade === "help" ? "Help recorded" : "Miss recorded"
+    : observation.evidenceCorrect ? "Correct" : observation.answerCorrect ? "Correct after rejecting it" : "Review the fixed response";
+  card.append(element("p", "result-label", label));
+  const japanese = element("p", "line-japanese");
+  appendJapanese(japanese, line.ja, { alwaysShow: true });
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, line.meaning, { alwaysShow: true });
+  card.append(japanese, meaning);
+  dom.screen.append(card);
+  setActions(
+    { label: "End run", onClick: confirmEndMission },
+    { label: run.stepIndex === mission.steps.length - 1 ? "Finish" : "Continue", onClick: advanceMission }
+  );
+}
+
+function advanceMission() {
+  const active = state.mission.active;
+  const mission = missionForId(active.missionId);
+  const run = advanceMissionRun(active, mission);
+  missionChoiceUi = null;
+  if (!run.completed) {
+    state = { ...state, mission: { ...state.mission, active: run } };
+    save();
+    return render();
+  }
+  completedMissionRun = run;
+  const repair = repairSession();
+  const session = guidedSession();
+  const completedRepair = repair?.phase === "mission" && repair.mission.id === run.missionId;
+  const completedGuided = session?.phase === "mission" && session.missionId === run.missionId;
+  if (completedRepair) {
+    state = {
+      ...state,
+      mission: { ...state.mission, active: null },
+      repair: { ...state.repair, active: completeRepairRound(repair, run, run.completedAt) }
+    };
+  } else {
+    state = { ...state, mission: recordMissionCompletion(state.mission, run) };
+  }
+  if (completedGuided && !completedRepair) {
+    state = { ...state, session: { ...state.session, active: completeGuidedSession(session, run, run.completedAt) } };
+  }
+  save();
+  if (completedRepair) return show("repair-overview");
+  if (completedGuided) return show("session-summary");
+  show("mission-complete");
+}
+
+function renderMissionComplete() {
+  const run = completedMissionRun;
+  if (!run) return show("home");
+  const mission = missionById(missionPack, run.missionId);
+  const wording = {
+    clean: ["Closed loop complete.", "Every fixed response worked, including the timed abort."],
+    recovered: ["Recovered safely.", "The abort was available, but at least one earlier line needed support."],
+    failed: ["Run the loop again.", "The final open turn was not recovered with the fixed abort."]
+  }[run.outcome];
+  screenHeading(run.outcome.toUpperCase(), wording[0], wording[1]);
+  setChrome({ title: mission.title, context: `Mission · ${run.mode}`, progress: 1 });
+  const clean = run.mode === "production"
+    ? run.observations.filter((entry) => entry.grade === "clean").length
+    : run.observations.filter((entry) => entry.evidenceCorrect).length;
+  const metrics = element("ul", "metric-list");
+  metrics.append(metric(`${clean}/${run.observations.length}`, run.mode === "production" ? "spoken clean" : "objective correct"), metric(run.hints, "hints used"), metric(`${(run.completedAt - run.startedAt) / 1000}s`, "total duration"));
+  dom.screen.append(metrics);
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    { label: "Run again", onClick: () => { startMissionRun(mission, { mode: run.mode, hideFurigana: run.hideFurigana }); show("mission-turn"); } }
+  );
+}
+
+function confirmEndMission() {
+  show("confirm", {
+    kicker: "END MISSION",
+    title: "Keep the evidence and stop?",
+    copy: "Anything already answered remains recorded.",
+    no: () => show("mission-turn"),
+    yes: endMission
+  });
+}
+
+function endMission() {
+  const missionId = state.mission.active?.missionId;
+  const repairOwned = repairSession()?.mission.id === missionId;
+  const sessionOwned = guidedSession()?.missionId === missionId;
+  state = { ...state, mission: { ...state.mission, active: null } };
+  save();
+  if (repairOwned) return show("repair-overview");
+  if (sessionOwned) return show("session-overview");
+  show("home");
+}
+
+function renderRouteHome() {
+  const route = state.route;
+  if (!route?.scenarioId || !route.eventAt || route.eventAt <= Date.now()) return showScenarioChooser("route");
+  const scenario = scenarioById(route.scenarioId);
+  const minutes = Math.max(0, Math.round((route.eventAt - Date.now()) / 60000));
+  screenHeading("NEXT REAL EVENT", scenario.title, `About ${minutes} minutes away. Route urgency currently outranks ordinary due-date ordering.`);
+  setChrome({ title: "Route boost is active.", context: "Scheduler priority", progress: 0.7 });
+  setActions(
+    { label: "Clear boost", onClick: clearRoute },
+    { label: "Change", onClick: () => showScenarioChooser("route") }
+  );
+}
+
+function renderRouteTime() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const index = screen.data.index ?? 0;
+  const minutes = ROUTE_MINUTES[index];
+  screenHeading("EVENT TIME", `Is it about ${minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hours`} away?`, "Choose this interval, or move through the useful trip-time presets.");
+  setChrome({ title: scenario.title, context: `Time choice · ${index + 1} of ${ROUTE_MINUTES.length}`, progress: 0.56 });
+  setActions(
+    { label: "Another →", onClick: () => show("route-time", { scenarioId: scenario.id, index: cycleIndex(index, ROUTE_MINUTES.length) }) },
+    { label: "Set boost", onClick: () => setRoute(scenario.id, minutes) }
+  );
+}
+
+function setRoute(scenarioId, minutes) {
+  state = { ...state, route: { scenarioId, eventAt: Date.now() + minutes * 60000 } };
+  save();
+  show("route-home");
+}
+
+function clearRoute() {
+  state = { ...state, route: { scenarioId: null, eventAt: null } };
+  save();
+  show("home");
+}
+
+function renderMapHome() {
+  const focus = state.focus;
+  if (focus?.scenarioId || focus?.skillId) {
+    screenHeading("SKILL PATH", "Practice focus is active.", "Clear it to return to ordinary cram, route, and field ordering—or browse a different skill.");
+    setChrome({ title: "Focused practice", context: focus.skillId ?? focus.scenarioId, progress: 0.32 });
+    return setActions({ label: "Clear focus", onClick: clearFocus }, { label: "Browse skills", onClick: () => show("map-island", { index: 0 }) });
+  }
+  show("map-island", { index: 0 });
+}
+
+function currentMap() {
+  return buildSkillMap({ content, tree, readings, state, currentItem: selectNextItem(items, tree, state) });
+}
+
+function renderMapIsland() {
+  const model = currentMap();
+  const choices = [...model.islands, { id: "__back", title: "Back to menu", purpose: "Leave the skill path." }];
+  const index = screen.data.index ?? 0;
+  const island = choices[index];
+  screenHeading("SKILL PATH", island.title, island.purpose);
+  setChrome({ title: "Choose one scenario.", context: `${index + 1} of ${choices.length}`, progress: 0.28 });
+  if (island.id !== "__back") {
+    const orbit = element("div", "progress-orbit");
+    const total = island.phraseTotal + island.readingTotal;
+    const ready = island.phraseReady + island.readingReady;
+    orbit.style.setProperty("--value", `${ready / Math.max(1, total) * 360}deg`);
+    orbit.append(element("span", "", `${ready}/${total}`));
+    dom.screen.append(orbit);
+    addMeta(`${island.phraseReady}/${island.phraseTotal} phrases`, `${island.readingReady}/${island.readingTotal} readings`);
+  }
+  setActions(
+    { label: "Another →", onClick: () => show("map-island", { index: cycleIndex(index, choices.length) }) },
+    { label: island.id === "__back" ? "Back" : "Open path", onClick: () => island.id === "__back" ? show("tools", { index: 0 }) : show("map-skill", { scenarioId: island.id, index: 0 }) }
+  );
+}
+
+function mapSkillsForScenario(scenarioId) {
+  const island = currentMap().islands.find((candidate) => candidate.id === scenarioId);
+  const readingNodes = readings.entries.filter((entry) => entry.scenarioId === scenarioId).map((entry) => ({
+    id: readingSkillId(entry),
+    label: `${entry.term} · ${entry.reading}`,
+    status: mapSkillStatus(tree, state, readingSkillId(entry)),
+    knownPercent: Math.round(probabilityKnown(state.skills[readingSkillId(entry)]) * 100),
+    attempts: state.skills[readingSkillId(entry)]?.attempts ?? 0,
+    prerequisites: [],
+    reading: true
+  }));
+  return [...island.nodes, ...readingNodes, { id: "__back", label: "Back to scenarios", back: true }];
+}
+
+function renderMapSkill() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const skills = mapSkillsForScenario(scenario.id);
+  const index = screen.data.index ?? 0;
+  const skill = skills[index];
+  screenHeading("ONE SKILL", skill.label, skill.back ? "Return to the scenario chooser." : "This is one node in the prerequisite path. Practice resolves a locked node to its earliest available prerequisite.");
+  setChrome({ title: scenario.title, context: `${index + 1} of ${skills.length}`, progress: 0.5 });
+  if (!skill.back) {
+    addMeta(skill.status, `${skill.knownPercent}% BKT`, `${skill.attempts} checks`, skill.reading ? "reading skill" : `${skill.prerequisites.length} prerequisites`);
+    const label = dom.screen.querySelector(".screen-title");
+    appendJapanese(label, skill.label, { alwaysShow: true });
+  }
+  setActions(
+    { label: "Next skill →", onClick: () => show("map-skill", { scenarioId: scenario.id, index: cycleIndex(index, skills.length) }) },
+    { label: skill.back ? "Back" : "Practice", onClick: () => skill.back ? show("map-island", { index: 0 }) : focusSkill(skill.id) }
+  );
+}
+
+function focusSkill(skillId) {
+  const target = practiceTargetFor(tree, state, skillId);
+  const item = items.find((candidate) => candidate.skillId === target);
+  if (!target || !item) return showToast("No available prerequisite card");
+  state = { ...state, focus: { scenarioId: item.scenarioId, skillId: target, mode: null } };
+  save();
+  showCard("solo", item.id);
+}
+
+function clearFocus() {
+  state = { ...state, focus: { scenarioId: null, skillId: null, mode: null } };
+  save();
+  show("home");
+}
+
+function openRoleplay() {
+  if (!roleplay.available) return show("roleplay-unavailable");
+  showScenarioChooser("roleplay");
+}
+
+function renderRoleplayUnavailable() {
+  screenHeading("OPTIONAL ROLEPLAY", "The routed partner is off.", roleplay.reason || "Configure the OpenAI-compatible HTTP proxy to enable it. Offline cards and missions remain fully available.");
+  setChrome({ title: "Offline path is ready.", context: "Roleplay · optional", progress: 0.2 });
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    { label: "Offline mission", onClick: showMissionChooser }
+  );
+}
+
+function roleplayLineChoices(scenario) {
+  return [
+    ...scenario.allowedUserLines.map((line) => ({ ...line, id: line.skillId })),
+    { id: "__custom", ja: "Type my own Japanese", meaning: "Compose a bounded custom attempt." },
+    { id: "__restart", ja: "Restart this exchange", meaning: "Clear the temporary transcript." },
+    { id: "__back", ja: "Back to menu", meaning: "Leave roleplay." }
+  ];
+}
+
+function renderRoleplayLine() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  const choices = roleplayLineChoices(scenario);
+  const index = screen.data.index ?? 0;
+  const choice = choices[index];
+  screenHeading("YOUR NEXT LINE", scenario.title, choice.meaning);
+  setChrome({ title: "Choose what to send.", context: `${index + 1} of ${choices.length} · ${roleplay.model}`, progress: 0.42 });
+  const card = element("article", "candidate-card");
+  const japanese = element("p", "candidate-text candidate-japanese");
+  appendJapanese(japanese, choice.ja, { alwaysShow: true });
+  card.append(japanese);
+  dom.screen.append(card);
+  setActions(
+    { label: "Another →", onClick: () => show("roleplay-line", { scenarioId: scenario.id, index: cycleIndex(index, choices.length) }) },
+    { label: choice.id.startsWith("__") ? choice.id === "__back" ? "Back" : choice.id === "__restart" ? "Restart" : "Type" : "Use line", onClick: () => chooseRoleplayLine(scenario, choice) }
+  );
+}
+
+function chooseRoleplayLine(scenario, choice) {
+  if (choice.id === "__back") return show("tools", { index: 0 });
+  if (choice.id === "__restart") {
+    roleplay.history = [];
+    roleplay.pending = null;
+    roleplay.draft = "";
+    return show("roleplay-line", { scenarioId: scenario.id, index: 0 });
+  }
+  roleplay.draft = choice.id === "__custom" ? "" : choice.ja;
+  show("roleplay-compose", { scenarioId: scenario.id });
+}
+
+function renderRoleplayCompose() {
+  const scenario = scenarioById(screen.data.scenarioId);
+  screenHeading("ROLEPLAY TURN", "Send one Japanese attempt.", "Only this typed text and the short exchange history use the configured network provider.");
+  setChrome({ title: scenario.title, context: `Roleplay · ${roleplay.model}`, progress: 0.62 });
+  renderTranscript();
+  const label = element("label", "textarea-label", "YOUR JAPANESE");
+  label.htmlFor = "roleplay-draft";
+  const textarea = element("textarea");
+  textarea.id = "roleplay-draft";
+  textarea.maxLength = 500;
+  textarea.value = roleplay.draft;
+  textarea.placeholder = "Type Japanese…";
+  dom.screen.append(label, textarea);
+  setActions(
+    { label: "Change line", onClick: () => { roleplay.draft = textarea.value; show("roleplay-line", { scenarioId: scenario.id, index: 0 }); } },
+    { label: "Send", onClick: () => sendRoleplay(scenario.id, textarea.value) }
+  );
+  textarea.focus();
+}
+
+function renderTranscript() {
+  if (roleplay.history.length === 0) return;
+  const transcript = element("div", "transcript");
+  for (const entry of roleplay.history.slice(-6)) {
+    const message = element("article", entry.role === "user" ? "user" : "assistant");
+    message.append(element("p", "transcript-label", entry.role === "user" ? "You" : "Partner"));
+    const line = element("p");
+    appendJapanese(line, entry.content, { alwaysShow: true });
+    message.append(line);
+    transcript.append(message);
+  }
+  dom.screen.append(transcript);
+}
+
+async function sendRoleplay(scenarioId, raw) {
+  const userText = raw.trim();
+  if (!userText) return showToast("Type one Japanese line first");
+  const priorHistory = [...roleplay.history];
+  roleplay.draft = userText;
+  show("roleplay-wait", { scenarioId });
+  try {
+    const result = await requestRoleplay({ scenarioId, history: priorHistory, userText });
+    roleplay.history = [
+      ...priorHistory,
+      { role: "user", content: userText },
+      { role: "assistant", content: result.staffReply.ja }
+    ].slice(-12);
+    roleplay.pending = result;
+    roleplay.draft = "";
+    show("roleplay-result", { scenarioId });
+  } catch (error) {
+    show("roleplay-error", { scenarioId, message: error.message });
+  }
+}
+
+function renderRoleplayWait() {
+  screenHeading("ROLEPLAY TURN", "Waiting for the partner…", "Provider failure cannot block offline practice.");
+  setChrome({ title: "Sending one turn.", context: "Optional network sensor", progress: 0.76 });
+  setActions();
+}
+
+function renderRoleplayResult() {
+  const result = roleplay.pending;
+  if (!result) return show("roleplay-line", { scenarioId: screen.data.scenarioId, index: 0 });
+  screenHeading("SENSOR OBSERVATION", "Review before applying.", "The model is a sensor, never mastery authority. You decide whether its structured observations enter local BKT.");
+  setChrome({ title: "Partner replied.", context: "Roleplay · review", progress: 0.9 });
+  const card = element("article", "line-card");
+  const japanese = element("p", "line-japanese");
+  if (result.staffReply.parts) appendProviderParts(japanese, result.staffReply.parts);
+  else appendJapanese(japanese, result.staffReply.ja, { alwaysShow: true });
+  const meaning = element("p", "line-meaning");
+  appendJapanese(meaning, result.staffReply.meaning, { alwaysShow: true });
+  card.append(japanese, meaning);
+  dom.screen.append(card);
+  const list = element("ul", "metric-list");
+  for (const observation of result.observations) list.append(metric(observation.outcome.replace("_", " "), skillLabel(observation.skillId)));
+  if (result.hint) list.append(metric("hint", result.hint));
+  dom.screen.append(list);
+  setActions(
+    { label: "Discard", onClick: () => finishRoleplayReview(false) },
+    { label: "Apply", onClick: () => finishRoleplayReview(true) }
+  );
+}
+
+function finishRoleplayReview(apply) {
+  if (apply && roleplay.pending) {
+    let applied = 0;
+    for (const observation of roleplay.pending.observations) {
+      if (observation.outcome === "not_tested") continue;
+      state = applyObservation(state, { id: `roleplay.${observation.skillId}.${Date.now()}`, skillId: observation.skillId }, observation.outcome === "success", Date.now() + applied, { source: "roleplay" });
+      applied += 1;
+    }
+    save();
+    showToast(`${applied} reviewed ${applied === 1 ? "observation" : "observations"} applied`);
+  }
+  roleplay.pending = null;
+  show("roleplay-line", { scenarioId: screen.data.scenarioId, index: 0 });
+}
+
+function renderRoleplayError() {
+  screenHeading("ROLEPLAY UNAVAILABLE", "The partner did not answer.", screen.data.message);
+  setChrome({ title: "Offline practice is unaffected.", context: "Provider error", progress: 0.7 });
+  setActions(
+    { label: "Offline mission", onClick: showMissionChooser },
+    { label: "Try again", onClick: () => show("roleplay-compose", { scenarioId: screen.data.scenarioId }) }
+  );
+}
+
+function renderShare() {
+  screenHeading("SHARE KAIWA", "Open the trip loop on a phone.", "Scan with the phone camera. The app loads from Vercel and can then be installed for offline use.");
+  setChrome({ title: "Scan this code.", context: "Public Kaiwa URL", progress: 0.8 });
+  const card = element("div", "qr-card");
+  const image = element("img");
+  image.id = "kaiwa-share-qr";
+  image.src = "./qr-kaiwa.svg";
+  image.width = 180;
+  image.height = 180;
+  image.alt = `QR code linking to ${PRODUCTION_URL}`;
+  card.id = "kaiwa-share";
+  card.append(image, element("p", "share-url", PRODUCTION_URL));
+  dom.screen.append(card);
+  setActions(
+    { label: "Home", onClick: () => show("home") },
+    { label: "Practice", onClick: resumePractice }
+  );
+}
+
+function progressChoices() {
+  return [
+    { id: "download", title: "Download progress", copy: "Save this device's state as a JSON backup." },
+    { id: "restore", title: "Restore backup", copy: "Choose a Kaiwa JSON file and migrate it safely." },
+    { id: "reset", title: "Reset local progress", copy: "Delete practice state from this browser only." },
+    { id: "back", title: "Back to menu", copy: "Leave without changing progress." }
+  ];
+}
+
+function renderProgressMenu() {
+  const choices = progressChoices();
+  const index = screen.data.index ?? 0;
+  const choice = choices[index];
+  screenHeading("LOCAL PROGRESS", choice.title, choice.copy);
+  setChrome({ title: "Progress stays yours.", context: `${index + 1} of ${choices.length} · no account`, progress: 0.35 });
+  addMeta(`${state.totalReviews} checks`, `${state.totalProduction ?? 0} spoken`, `state v${state.version}`);
+  setActions(
+    { label: "Another →", onClick: () => show("progress-menu", { index: cycleIndex(index, choices.length) }) },
+    { label: choice.id === "back" ? "Back" : "Choose", onClick: () => chooseProgressAction(choice.id) }
+  );
+}
+
+function chooseProgressAction(id) {
+  if (id === "back") return show("tools", { index: 0 });
+  if (id === "download") return downloadProgress();
+  if (id === "restore") return dom.progressImport.click();
+  if (id === "reset") {
+    return show("confirm", {
+      kicker: "RESET PROGRESS",
+      title: "Delete local practice state?",
+      copy: "This cannot be undone unless you downloaded a backup.",
+      no: () => show("progress-menu", { index: 0 }),
+      yes: resetProgress
+    });
+  }
+}
+
+function downloadProgress() {
+  const blob = new Blob([createProgressBackup(state)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `kaiwa-progress-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Progress backup downloaded");
+  show("home");
 }
 
 async function restoreProgressFile(file) {
@@ -1880,220 +1510,110 @@ async function restoreProgressFile(file) {
   try {
     state = restoreProgressBackup(await file.text(), tree);
     repairActivityState();
-    completedMissionRun = null;
-    completedMissionWeakestSkillId = null;
-    renderCard();
     showToast("Progress restored");
+    show("home");
   } catch (error) {
-    showToast(error.message);
+    show("progress-error", { message: error.message });
   } finally {
     dom.progressImport.value = "";
   }
 }
 
-function bindEvents() {
-  dom.sessionOpen.addEventListener("click", openSessionDialog);
-  dom.sessionStart.addEventListener("click", startGuidedSession);
-  dom.sessionContinue.addEventListener("click", continueGuidedSession);
-  dom.sessionEnd.addEventListener("click", endGuidedSession);
-  dom.sessionAgain.addEventListener("click", startGuidedSession);
-  dom.repairOpen.addEventListener("click", openRepairDialog);
-  dom.repairAction.addEventListener("click", continueRepair);
-  dom.repairEnd.addEventListener("click", endRepair);
-  dom.missionOpen.addEventListener("click", openMissionDialog);
-  dom.missionSelect.addEventListener("change", renderMissionLobby);
-  dom.missionMode.addEventListener("change", renderMissionLobby);
-  dom.missionStart.addEventListener("click", () => startMission());
-  dom.missionProductionReveal.addEventListener("click", revealProductionStep);
-  dom.missionProductionGrades.querySelectorAll("[data-production-grade]").forEach((button) => {
-    button.addEventListener("click", () => gradeProductionChoice(button.dataset.productionGrade));
-  });
-  dom.missionHint.addEventListener("click", () => {
-    const run = revealMissionHint(state.mission.active);
-    saveMissionRun(run);
-    renderMissionStep();
-  });
-  dom.missionAdvance.addEventListener("click", () => {
-    const active = state.mission.active;
-    const mission = missionForId(active?.missionId);
-    if (!active || !mission || !active.awaitingAdvance) return;
-    const run = advanceMissionRun(active, mission);
-    if (run.completed) {
-      stopMissionTimer();
-      const repair = repairSession();
-      const session = guidedSession();
-      const completedRepair = repair?.phase === "mission" && repair.mission.id === run.missionId;
-      const completedGuided = session?.phase === "mission" && session.missionId === run.missionId;
-      if (completedRepair) {
-        state = {
-          ...state,
-          mission: { ...state.mission, active: null },
-          repair: {
-            ...state.repair,
-            active: completeRepairRound(repair, run, run.completedAt)
-          }
-        };
-      } else {
-        state = { ...state, mission: recordMissionCompletion(state.mission, run) };
-      }
-      if (completedGuided && !completedRepair) {
-        state = {
-          ...state,
-          session: {
-            ...state.session,
-            active: completeGuidedSession(session, run, run.completedAt)
-          }
-        };
-      }
-      saveState(state);
-      renderCard();
-      if (completedRepair) {
-        dom.missionDialog.close();
-        renderRepairDialog();
-        dom.repairDialog.showModal();
-      } else if (completedGuided) {
-        dom.missionDialog.close();
-        renderSessionDialog();
-        dom.sessionDialog.showModal();
-      } else {
-        renderMissionComplete(run);
-      }
-      return;
-    }
-    saveMissionRun(run);
-    renderMissionStep();
-  });
-  dom.missionEnd.addEventListener("click", () => {
-    if (!window.confirm("End this mission? Recognition, reading, and production evidence already recorded will remain.")) return;
-    stopMissionTimer();
-    const repairMission = repairSession()?.mission.id === state.mission.active?.missionId;
-    state = { ...state, mission: { ...state.mission, active: null } };
-    saveState(state);
-    completedMissionRun = null;
-    renderMissionSummary();
-    if (repairMission) {
-      dom.missionDialog.close();
-      openRepairDialog();
-    } else {
-      renderMissionLobby();
-    }
-  });
-  dom.missionPracticeWeakest.addEventListener("click", () => {
-    const skillId = completedMissionWeakestSkillId
-      ? practiceTargetFor(tree, state, completedMissionWeakestSkillId)
-      : null;
-    const item = skillId
-      ? items.find((candidate) => candidate.skillId === skillId && candidate.mode !== "reading")
-        ?? items.find((candidate) => candidate.skillId === skillId)
-      : null;
-    if (!item) return;
-    setPracticeFocus({ scenarioId: item.scenarioId, skillId }, "Weakest mission skill focused");
-    dom.missionDialog.close();
-  });
-  dom.missionAgain.addEventListener("click", () => {
-    if (!completedMissionRun) return;
-    startMission(completedMissionRun.missionId, completedMissionRun.hideFurigana, completedMissionRun.mode);
-  });
-  dom.mapOpen.addEventListener("click", () => {
-    renderSkillMap();
-    dom.mapDialog.showModal();
-  });
-  dom.focusClear.addEventListener("click", clearPracticeFocus);
-  dom.mapClearFocus.addEventListener("click", clearPracticeFocus);
-  dom.sheetOpen.addEventListener("click", () => {
-    renderPhoneSheet(currentItem?.scenarioId);
-    dom.sheetDialog.showModal();
-  });
-  dom.sheetScenario.addEventListener("change", () => {
-    renderPhoneSheet(dom.sheetScenario.value);
-  });
-  dom.abortOpen.addEventListener("click", () => dom.abortDialog.showModal());
-  document.querySelectorAll("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelector(`#${button.dataset.closeDialog}`).close();
-    });
-  });
-  dom.missionDialog.addEventListener("close", stopMissionTimer);
-  dom.roleplayScenario.addEventListener("change", resetRoleplay);
-  dom.roleplayReset.addEventListener("click", resetRoleplay);
-  dom.roleplaySend.addEventListener("click", sendRoleplayTurn);
-  dom.roleplayInput.addEventListener("keydown", (event) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") sendRoleplayTurn();
-  });
-  dom.roleplayApply.addEventListener("click", applyRoleplayObservations);
-  dom.roleplayDiscard.addEventListener("click", () => {
-    pendingRoleplayResult = null;
-    dom.roleplayObservation.hidden = true;
-    showToast("Sensor observation discarded");
-  });
-  dom.reveal.addEventListener("click", recordUnsure);
-  dom.furiganaHelp.addEventListener("click", showRetiredFurigana);
-  dom.nextCard.addEventListener("click", () => {
-    if (repairSession()?.phase === "mission") startRepairMission();
-    else if (repairSession()?.phase === "cards") renderCard();
-    else if (guidedSession()?.phase === "mission") continueGuidedSession();
-    else renderCard();
-  });
-  dom.progressExport.addEventListener("click", downloadProgress);
-  dom.progressImportOpen.addEventListener("click", () => dom.progressImport.click());
-  dom.progressImport.addEventListener("change", () => restoreProgressFile(dom.progressImport.files?.[0]));
-  dom.routeApply.addEventListener("click", () => {
-    const minutes = Number(dom.routeMinutes.value);
-    if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) {
-      showToast("Use 1–1440 minutes");
-      return;
-    }
-    state = {
-      ...state,
-      route: {
-        scenarioId: dom.routeScenario.value,
-        eventAt: Date.now() + minutes * 60000
-      }
-    };
-    saveState(state);
-    renderCard();
-  });
-  dom.routeClear.addEventListener("click", () => {
-    state = { ...state, route: { scenarioId: null, eventAt: null } };
-    saveState(state);
-    renderCard();
-  });
-  dom.fieldScenario.addEventListener("change", () => {
-    renderFieldSummary();
-    renderRepairLauncher();
-  });
-  document.querySelectorAll("[data-field-outcome]").forEach((button) => {
-    button.addEventListener("click", () => logFieldOutcome(button.dataset.fieldOutcome));
-  });
-  dom.reset.addEventListener("click", () => {
-    if (!window.confirm("Reset all Kaiwa practice progress on this device?")) return;
-    clearState();
-    stopRepairTimer();
-    state = createInitialState(tree);
-    saveState(state);
-    renderCard();
-    showToast("Progress reset");
-  });
+function resetProgress() {
+  clearState();
+  state = createInitialState(tree);
+  save();
+  show("home");
 }
 
-async function loadJson(path) {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`Could not load ${path} (${response.status})`);
-  return response.json();
+function renderConfirm() {
+  screenHeading(screen.data.kicker ?? "CONFIRM", screen.data.title, screen.data.copy);
+  setChrome({ title: "Yes or no?", context: "Confirmation", progress: 0.72 });
+  setActions(
+    { label: "No", onClick: screen.data.no },
+    { label: "Yes", onClick: screen.data.yes }
+  );
+}
+
+function renderProgressError() {
+  screenHeading("RESTORE FAILED", "That backup was not applied.", screen.data.message);
+  setChrome({ title: "Progress is unchanged.", context: "Local backup", progress: 0.5 });
+  setActions({ label: "Home", onClick: () => show("home") }, { label: "Try another", onClick: () => dom.progressImport.click() });
+}
+
+function skillLabel(skillId) {
+  return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
+}
+
+function render() {
+  stopTicker();
+  dom.screen.hidden = false;
+  switch (screen.name) {
+    case "home": return renderHome();
+    case "tools": return renderTools();
+    case "scenario-chooser": return renderScenarioChooser();
+    case "card": return renderCard();
+    case "session-intro": return renderSessionIntro();
+    case "session-overview": return renderSessionOverview();
+    case "session-summary": return renderSessionSummary();
+    case "abort": return renderAbort();
+    case "sheet-line": return renderSheetLine();
+    case "field-question": return renderFieldQuestion();
+    case "field-result": return renderFieldResult();
+    case "repair-overview": return renderRepairOverview();
+    case "mission-chooser": return renderMissionChooser();
+    case "mission-mode": return renderMissionMode();
+    case "mission-challenge": return renderMissionChallenge();
+    case "mission-turn": return renderMissionTurn();
+    case "mission-complete": return renderMissionComplete();
+    case "route-home": return renderRouteHome();
+    case "route-time": return renderRouteTime();
+    case "map-home": return renderMapHome();
+    case "map-island": return renderMapIsland();
+    case "map-skill": return renderMapSkill();
+    case "roleplay-unavailable": return renderRoleplayUnavailable();
+    case "roleplay-line": return renderRoleplayLine();
+    case "roleplay-compose": return renderRoleplayCompose();
+    case "roleplay-wait": return renderRoleplayWait();
+    case "roleplay-result": return renderRoleplayResult();
+    case "roleplay-error": return renderRoleplayError();
+    case "share": return renderShare();
+    case "progress-menu": return renderProgressMenu();
+    case "progress-error": return renderProgressError();
+    case "confirm": return renderConfirm();
+    default: return show("home");
+  }
+}
+
+async function setupRoleplay() {
+  try {
+    const config = await getRoleplayConfig();
+    roleplay.available = Boolean(config.available);
+    roleplay.model = config.model ?? null;
+    roleplay.reason = config.reason ?? "Roleplay is not configured.";
+  } catch {
+    roleplay.available = false;
+    roleplay.reason = "Run the local Node server with provider variables to enable optional roleplay.";
+  }
+}
+
+function updateNetworkBadge() {
+  const online = navigator.onLine;
+  dom.badge.textContent = online ? "Offline-ready" : "Offline";
+  dom.badge.classList.toggle("online", online);
 }
 
 async function start() {
   try {
     [content, tree, readings, missionPack] = await Promise.all([
-      loadJson("./data/scenarios.json"),
-      loadJson("./data/tree.json"),
-      loadJson("./data/readings.json"),
-      loadJson("./data/missions.json")
+      fetch("./data/scenarios.json").then((response) => response.json()),
+      fetch("./data/tree.json").then((response) => response.json()),
+      fetch("./data/readings.json").then((response) => response.json()),
+      fetch("./data/missions.json").then((response) => response.json())
     ]);
     tree = augmentTreeWithReadings(tree, readings);
     validateMissionPack(missionPack, content, tree);
     missionLines = missionLineIndex(content);
-    readingSkillIds = new Set(readings.entries.map(readingSkillId));
     items = flattenItems(content, readings);
     state = loadState(tree);
     repairActivityState();
@@ -2101,14 +1621,12 @@ async function start() {
     const name = content.placeholders.nameKatakana;
     dom.placeholder.textContent = `${name.value} is an unconfirmed placeholder. Replace it with the exact reservation name.`;
     dom.placeholder.hidden = name.confirmed;
-
-    populateRouteScenarios();
-    populateMissions();
-    populateSafetyTools();
-    bindEvents();
-    renderCard();
+    dom.progressImport.addEventListener("change", () => restoreProgressFile(dom.progressImport.files?.[0]));
+    window.addEventListener("online", updateNetworkBadge);
+    window.addEventListener("offline", updateNetworkBadge);
+    updateNetworkBadge();
     dom.loading.hidden = true;
-    dom.app.hidden = false;
+    render();
     setupRoleplay();
   } catch (error) {
     console.error(error);
