@@ -152,6 +152,10 @@ select, input {
 .mission-launcher h2 { margin: 0; font-size: 1rem; line-height: 1.2; }
 .mission-summary { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.72rem; line-height: 1.35; }
 .mission-open-button { flex: 0 0 auto; min-height: 2.8rem; border: 0; border-radius: 0.65rem; background: var(--green-dark); color: white; padding: 0.55rem 0.8rem; font-size: 0.8rem; font-weight: 850; }
+.repair-launcher { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0.55rem 0 0.75rem; border: 1px solid #d59b96; border-radius: 0.85rem; background: linear-gradient(135deg, #fff0ec, #fffdf7); padding: 0.8rem; }
+.repair-launcher h2 { margin: 0; font-size: 1rem; line-height: 1.2; }
+.repair-summary { margin: 0.25rem 0 0; color: #71453f; font-size: 0.72rem; line-height: 1.4; }
+.repair-open-button { flex: 0 0 auto; min-height: 2.8rem; border: 0; border-radius: 0.65rem; background: var(--red); color: white; padding: 0.55rem 0.8rem; font-size: 0.8rem; font-weight: 850; }
 
 .card {
   min-height: 29rem;
@@ -275,7 +279,7 @@ footer { padding: 1rem 0; text-align: center; }
 .toast { position: fixed; left: 50%; bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 10; translate: -50% 1rem; border-radius: 999px; background: var(--ink); color: white; padding: 0.65rem 0.9rem; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: 160ms ease; }
 .toast.visible { opacity: 1; translate: -50% 0; }
 
-.sheet-dialog, .abort-dialog, .map-dialog, .mission-dialog, .session-dialog {
+.sheet-dialog, .abort-dialog, .map-dialog, .mission-dialog, .session-dialog, .repair-dialog {
   width: min(calc(100% - 1rem), 42rem);
   max-height: calc(100dvh - 1rem);
   margin: auto;
@@ -286,7 +290,7 @@ footer { padding: 1rem 0; text-align: center; }
   padding: 1rem;
 }
 
-.sheet-dialog::backdrop, .abort-dialog::backdrop, .map-dialog::backdrop, .mission-dialog::backdrop, .session-dialog::backdrop { background: rgba(15, 24, 19, 0.72); }
+.sheet-dialog::backdrop, .abort-dialog::backdrop, .map-dialog::backdrop, .mission-dialog::backdrop, .session-dialog::backdrop, .repair-dialog::backdrop { background: rgba(15, 24, 19, 0.72); }
 .dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
 .dialog-header h2 { margin: 0; font-size: 1.55rem; }
 .dialog-close { width: 2.75rem; height: 2.75rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--ink); font-size: 1.6rem; line-height: 1; }
@@ -378,6 +382,10 @@ footer { padding: 1rem 0; text-align: center; }
 .session-results { margin: 0.8rem 0 1rem; padding: 0; list-style: none; }
 .session-results li { border-top: 1px solid var(--line); padding: 0.65rem 0; font-size: 0.82rem; line-height: 1.45; }
 .session-results strong { display: block; margin-bottom: 0.15rem; }
+.repair-dialog { width: min(calc(100% - 1rem), 36rem); overflow: auto; }
+.repair-dialog-header { position: sticky; top: -1rem; z-index: 5; margin: -1rem -1rem 0; border-bottom: 1px solid var(--line); background: rgba(255, 253, 247, 0.96); backdrop-filter: blur(0.6rem); padding: 1rem; }
+.repair-status { margin: 1rem 0; color: var(--muted); line-height: 1.5; }
+.repair-end { display: block; margin: 0.75rem auto 0; color: var(--muted); font-size: 0.76rem; }
 
 .mission-dialog { width: min(calc(100% - 1rem), 36rem); overflow: auto; }
 .mission-dialog-header { position: sticky; top: -1rem; z-index: 5; margin: -1rem -1rem 0; border-bottom: 1px solid var(--line); background: rgba(255, 253, 247, 0.96); backdrop-filter: blur(0.6rem); padding: 1rem; }
@@ -436,17 +444,21 @@ footer { padding: 1rem 0; text-align: center; }
   .route-controls { grid-template-columns: 1fr; }
   .roleplay-controls { display: block; }
   .card { min-height: 27rem; }
-  .sheet-dialog, .abort-dialog, .map-dialog, .mission-dialog, .session-dialog { width: calc(100% - 0.5rem); max-height: calc(100dvh - 0.5rem); padding: 0.85rem; }
+  .sheet-dialog, .abort-dialog, .map-dialog, .mission-dialog, .session-dialog, .repair-dialog { width: calc(100% - 0.5rem); max-height: calc(100dvh - 0.5rem); padding: 0.85rem; }
   .map-dialog { height: calc(100dvh - 0.5rem); }
   .map-dialog-header { top: -0.85rem; margin: -0.85rem -0.85rem 0; padding: 0.85rem; }
   .mission-dialog { height: calc(100dvh - 0.5rem); }
   .mission-dialog-header { top: -0.85rem; margin: -0.85rem -0.85rem 0; padding: 0.85rem; }
   .session-dialog { height: calc(100dvh - 0.5rem); }
   .session-dialog-header { top: -0.85rem; margin: -0.85rem -0.85rem 0; padding: 0.85rem; }
+  .repair-dialog { height: calc(100dvh - 0.5rem); }
+  .repair-dialog-header { top: -0.85rem; margin: -0.85rem -0.85rem 0; padding: 0.85rem; }
   .session-launcher { align-items: stretch; flex-direction: column; gap: 0.65rem; }
   .session-open-button { width: 100%; }
   .mission-launcher { align-items: stretch; flex-direction: column; gap: 0.65rem; }
   .mission-open-button { width: 100%; }
+  .repair-launcher { align-items: stretch; flex-direction: column; gap: 0.65rem; }
+  .repair-open-button { width: 100%; }
   .map-toolbar { align-items: flex-start; flex-direction: column; }
   .map-island > summary { align-items: flex-start; flex-direction: column; gap: 0.2rem; }
   .map-island-stats { text-align: left; }

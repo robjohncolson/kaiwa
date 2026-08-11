@@ -36,7 +36,7 @@ function newSkillState(tree, node, now) {
 
 export function createInitialState(tree, now = Date.now()) {
   return {
-    version: 5,
+    version: 6,
     createdAt: now,
     updatedAt: now,
     totalReviews: 0,
@@ -46,6 +46,7 @@ export function createInitialState(tree, now = Date.now()) {
     focus: { scenarioId: null, skillId: null, mode: null },
     mission: { active: null, stats: {} },
     session: { active: null, recent: [] },
+    repair: { active: null, recent: [] },
     field: { events: [] },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
@@ -101,14 +102,14 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4, 5].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4, 5, 6].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
   return {
     ...initial,
     ...candidate,
-    version: 5,
+    version: 6,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
     mission: {
@@ -123,6 +124,10 @@ function mergeWithCurrentTree(candidate, tree, now) {
     session: {
       active: candidate.session?.active ?? null,
       recent: Array.isArray(candidate.session?.recent) ? candidate.session.recent.slice(-10) : []
+    },
+    repair: {
+      active: candidate.repair?.active ?? null,
+      recent: Array.isArray(candidate.repair?.recent) ? candidate.repair.recent.slice(-20) : []
     },
     field: {
       events: Array.isArray(candidate.field?.events) ? candidate.field.events.slice(-100) : []
@@ -174,7 +179,7 @@ export function restoreProgressBackup(raw, tree, storage = globalThis.localStora
   if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4, 5].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (![1, 2, 3, 4, 5, 6].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   const restored = mergeWithCurrentTree(envelope.state, tree, now);
