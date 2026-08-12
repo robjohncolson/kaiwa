@@ -5,6 +5,7 @@ import {
   createInitialState,
   createProgressBackup,
   loadState,
+  previewProgressBackup,
   restoreProgressBackup,
   saveState,
   STORAGE_KEY
@@ -169,6 +170,27 @@ test("progress backups restore through current-tree migration", () => {
   assert.equal(restored.skills.one.readingCheckpointStreak, 2);
   assert.equal(restored.session.active.id, "guided-100");
   assert.equal(JSON.parse(storage.values.get(STORAGE_KEY)).totalReviews, 7);
+});
+
+test("progress backup preview migrates without mutating storage", () => {
+  const storage = memoryStorage();
+  const current = createInitialState(tree, 100);
+  current.totalReviews = 2;
+  saveState(current, storage);
+  const before = storage.getItem(STORAGE_KEY);
+
+  const incoming = createInitialState(tree, 200);
+  incoming.totalReviews = 11;
+  incoming.totalProduction = 4;
+  incoming.field.events.push({ id: "field-1", outcome: "worked", at: 210 });
+  const preview = previewProgressBackup(createProgressBackup(incoming, 250), tree, 300);
+
+  assert.equal(preview.exportedAt, 250);
+  assert.equal(preview.sourceVersion, 6);
+  assert.equal(preview.state.totalReviews, 11);
+  assert.equal(preview.state.totalProduction, 4);
+  assert.equal(preview.state.field.events.length, 1);
+  assert.equal(storage.getItem(STORAGE_KEY), before);
 });
 
 test("v4 state gains independent production and field evidence", () => {

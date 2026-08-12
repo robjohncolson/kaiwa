@@ -39,12 +39,13 @@ import {
   recordSessionCard,
   summarizeGuidedSession
 } from "./session.js";
-import { buildSkillMap, mapSkillStatus, practiceTargetFor } from "./map.js";
+import { buildSkillMap, mapSkillStatus, practiceTargetFor, schedulerReason } from "./map.js";
 import {
   clearState,
   createInitialState,
   createProgressBackup,
   loadState,
+  previewProgressBackup,
   restoreProgressBackup,
   saveState
 } from "./store.js";
@@ -94,6 +95,7 @@ let cardUi = null;
 let missionChoiceUi = null;
 let completedMissionRun = null;
 let tickerId = null;
+let passport = { raw: null, preview: null, file: null, shareSupported: false };
 let roleplay = {
   available: false,
   model: null,
@@ -168,6 +170,29 @@ function addDataCard(title, body = "") {
   if (body) card.append(element("p", "screen-copy", body));
   dom.screen.append(card);
   return card;
+}
+
+function formatLocalTime(value) {
+  if (!Number.isFinite(value)) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(value));
+}
+
+function progressSummary(progressState) {
+  return [
+    ["Objective checks", progressState.totalReviews ?? 0],
+    ["Spoken observations", progressState.totalProduction ?? 0],
+    ["Field logs", progressState.field?.events?.length ?? 0],
+    ["Last activity", formatLocalTime(progressState.updatedAt)]
+  ];
+}
+
+function appendProgressSummary(progressState) {
+  const list = element("ul", "metric-list passport-summary");
+  for (const [label, value] of progressSummary(progressState)) list.append(metric(value, label));
+  dom.screen.append(list);
 }
 
 function configureAction(button, action) {
@@ -436,6 +461,14 @@ function renderCard() {
   appendJapanese(prompt, item.prompt, { neverShow: item.mode === "reading" });
   dom.screen.append(prompt);
   addMeta(item.mode === "reading" ? "No furigana test" : "Japanese → meaning", `${item.options.length} candidates`);
+  const reason = context === "repair"
+    ? "Field repair · recent conversation friction"
+    : context === "session"
+      ? `Guided plan · ${schedulerReason(state, item)}`
+      : schedulerReason(state, item);
+  const reasonCard = element("aside", "practice-reason");
+  reasonCard.append(element("p", "candidate-label", "WHY THIS CARD"), element("p", "practice-reason-text", reason));
+  dom.screen.append(reasonCard);
 
   if (!cardUi.answered) {
     const option = item.options[cardUi.optionIndex];
@@ -1478,7 +1511,7 @@ function renderProgressMenu() {
 
 function chooseProgressAction(id) {
   if (id === "back") return show("tools", { index: 0 });
-  if (id === "download") return downloadProgress();
+  if (id === "download") return prepareProgressExport();
   if (id === "restore") return dom.progressImport.click();
   if (id === "reset") {
     return show("confirm", {
@@ -1491,12 +1524,55 @@ function chooseProgressAction(id) {
   }
 }
 
-function downloadProgress() {
-  const blob = new Blob([createProgressBackup(state)], { type: "application/json" });
+function backupFilename(now = Date.now()) {
+  return `kaiwa-progress-${new Date(now).toISOString().slice(0, 10)}.json`;
+}
+
+function backupFile(raw, now = Date.now()) {
+  if (typeof File !== "function") return null;
+  return new File([raw], backupFilename(now), { type: "application/json" });
+}
+
+function canShareBackup(file) {
+  if (!file || typeof navigator.share !== "function") return false;
+  if (typeof navigator.canShare !== "function") return true;
+  try {
+    return navigator.canShare({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+function prepareProgressExport() {
+  const now = Date.now();
+  const raw = createProgressBackup(state, now);
+  const file = backupFile(raw, now);
+  passport = {
+    raw,
+    file,
+    preview: { exportedAt: now, sourceVersion: state.version, state },
+    shareSupported: canShareBackup(file)
+  };
+  show("passport-export");
+}
+
+function renderPassportExport() {
+  const action = passport.shareSupported ? "Share backup" : "Download backup";
+  screenHeading("PROGRESS PASSPORT", "Ready to take with you.", "This JSON file contains only Kaiwa practice state. No account, API key, or private trip content is added.");
+  setChrome({ title: "Review before export.", context: `state v${passport.preview?.sourceVersion ?? state.version} · ${(passport.raw?.length ?? 0).toLocaleString()} bytes`, progress: 0.72 });
+  appendProgressSummary(passport.preview?.state ?? state);
+  setActions(
+    { label: "Back", onClick: () => show("progress-menu", { index: 0 }) },
+    { label: action, onClick: shareOrDownloadProgress }
+  );
+}
+
+function downloadProgress(raw = passport.raw) {
+  const blob = new Blob([raw], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `kaiwa-progress-${new Date().toISOString().slice(0, 10)}.json`;
+  link.download = passport.file?.name ?? backupFilename();
   document.body.append(link);
   link.click();
   link.remove();
@@ -1505,18 +1581,55 @@ function downloadProgress() {
   show("home");
 }
 
+async function shareOrDownloadProgress() {
+  if (!passport.shareSupported) return downloadProgress();
+  try {
+    await navigator.share({
+      files: [passport.file],
+      title: "Kaiwa progress passport"
+    });
+    showToast("Progress passport shared");
+    show("home");
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    passport.shareSupported = false;
+    downloadProgress();
+    showToast("Sharing unavailable; backup downloaded");
+  }
+}
+
 async function restoreProgressFile(file) {
   if (!file) return;
   try {
-    state = restoreProgressBackup(await file.text(), tree);
-    repairActivityState();
-    showToast("Progress restored");
-    show("home");
+    const raw = await file.text();
+    const preview = previewProgressBackup(raw, tree);
+    passport = { raw, preview, file, shareSupported: false };
+    show("passport-import");
   } catch (error) {
     show("progress-error", { message: error.message });
   } finally {
     dom.progressImport.value = "";
   }
+}
+
+function renderPassportImport() {
+  const preview = passport.preview;
+  if (!preview) return show("progress-menu", { index: 0 });
+  screenHeading("RESTORE PREVIEW", "Replace this device’s progress?", "Nothing has changed yet. Restore writes the migrated preview below; Cancel keeps the current browser state exactly as it is.");
+  setChrome({ title: "Inspect before restore.", context: `backup v${preview.sourceVersion} · exported ${formatLocalTime(preview.exportedAt)}`, progress: 0.82 });
+  appendProgressSummary(preview.state);
+  setActions(
+    { label: "Cancel", onClick: () => show("progress-menu", { index: 1 }) },
+    { label: "Restore", onClick: applyProgressRestore }
+  );
+}
+
+function applyProgressRestore() {
+  state = restoreProgressBackup(passport.raw, tree);
+  repairActivityState();
+  passport = { raw: null, preview: null, file: null, shareSupported: false };
+  showToast("Progress restored");
+  show("home");
 }
 
 function resetProgress() {
@@ -1579,6 +1692,8 @@ function render() {
     case "roleplay-error": return renderRoleplayError();
     case "share": return renderShare();
     case "progress-menu": return renderProgressMenu();
+    case "passport-export": return renderPassportExport();
+    case "passport-import": return renderPassportImport();
     case "progress-error": return renderProgressError();
     case "confirm": return renderConfirm();
     default: return show("home");

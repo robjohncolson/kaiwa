@@ -73,6 +73,14 @@ h1 { max-width: 19rem; margin: 0; font-family: Georgia, "Yu Mincho", serif; font
   padding: 1rem;
 }
 .focus-card { border-left: 0.38rem solid var(--gold); }
+.practice-reason {
+  margin-top: 0.9rem;
+  border-left: 0.38rem solid var(--gold);
+  border-radius: 0.8rem;
+  background: #f7f0dc;
+  padding: 0.72rem 0.85rem;
+}
+.practice-reason-text { margin: 0.3rem 0 0; color: var(--green-dark); font-size: 0.9rem; font-weight: 850; line-height: 1.35; }
 .candidate-card { display: grid; min-height: 9rem; place-items: center; border-color: #b9cbbf; text-align: center; }
 .candidate-label { margin: 0; color: var(--muted); font-size: 0.69rem; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; }
 .candidate-text { margin: 0.7rem 0 0; font-size: 1.05rem; font-weight: 780; line-height: 1.5; }
@@ -97,6 +105,7 @@ ruby.furigana-hidden rt { visibility: hidden; }
 .word-zoom p { margin: 0.25rem 0; line-height: 1.5; }
 
 .stage-list, .metric-list, .transcript { margin: 1rem 0 0; padding: 0; list-style: none; }
+.passport-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1rem; }
 .stage-list li, .metric-list li { border-top: 1px solid var(--line); padding: 0.68rem 0; color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
 .stage-list li.current { color: var(--ink); font-weight: 850; }
 .stage-list li.done::before { content: "✓ "; color: var(--green); font-weight: 950; }
