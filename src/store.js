@@ -166,7 +166,7 @@ export function createProgressBackup(state, now = Date.now()) {
   }, null, 2);
 }
 
-export function restoreProgressBackup(raw, tree, storage = globalThis.localStorage, now = Date.now()) {
+export function previewProgressBackup(raw, tree, now = Date.now()) {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > 2_000_000) {
     throw new TypeError("Kaiwa backup must be a non-empty JSON file under 2 MB.");
   }
@@ -182,7 +182,15 @@ export function restoreProgressBackup(raw, tree, storage = globalThis.localStora
   if (![1, 2, 3, 4, 5, 6].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
-  const restored = mergeWithCurrentTree(envelope.state, tree, now);
-  saveState(restored, storage);
-  return restored;
+  return {
+    exportedAt: Number.isFinite(envelope.exportedAt) ? envelope.exportedAt : null,
+    sourceVersion: envelope.state.version,
+    state: mergeWithCurrentTree(envelope.state, tree, now)
+  };
+}
+
+export function restoreProgressBackup(raw, tree, storage = globalThis.localStorage, now = Date.now()) {
+  const preview = previewProgressBackup(raw, tree, now);
+  saveState(preview.state, storage);
+  return preview.state;
 }
