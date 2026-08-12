@@ -1,6 +1,7 @@
 // Dependency-free mobile regression gate driven through Chrome DevTools Protocol.
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
@@ -132,16 +133,32 @@ async function connect(url) {
   });
 }
 
-async function waitForDebugPort(userDataDir) {
-  const file = path.join(userDataDir, "DevToolsActivePort");
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+async function reservePort() {
+  const server = createNetServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  return port;
+}
+
+async function waitForDebuggerUrl(port, browser, stderrLines) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    if (browser.exitCode != null) {
+      throw new Error(`Chrome exited with ${browser.exitCode}: ${stderrLines.join("").trim() || "no diagnostics"}`);
+    }
     try {
-      const [port, socketPath] = (await readFile(file, "utf8")).trim().split("\n");
-      if (port && socketPath) return `ws://127.0.0.1:${port}${socketPath}`;
+      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
+      if (response.ok) {
+        const details = await response.json();
+        if (details.webSocketDebuggerUrl) return details.webSocketDebuggerUrl;
+      }
     } catch {}
     await sleep(25);
   }
-  throw new Error("Chrome did not expose a DevTools port.");
+  throw new Error(`Chrome did not expose its debugging endpoint within 15 seconds: ${stderrLines.join("").trim() || "no diagnostics"}`);
 }
 
 async function evaluate(cdp, sessionId, expression) {
@@ -174,18 +191,24 @@ async function run() {
   const address = server.address();
   const origin = `http://127.0.0.1:${address.port}`;
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "kaiwa-browser-"));
+  const debugPort = await reservePort();
   const browser = spawn(chrome, [
     "--headless=new",
     "--no-sandbox",
     "--disable-gpu",
     "--disable-dev-shm-usage",
     `--user-data-dir=${userDataDir}`,
-    "--remote-debugging-port=0",
+    `--remote-debugging-port=${debugPort}`,
     "about:blank"
-  ], { stdio: "ignore" });
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  const stderrLines = [];
+  browser.stderr.on("data", (chunk) => {
+    stderrLines.push(String(chunk));
+    if (stderrLines.length > 40) stderrLines.shift();
+  });
   let socket;
   try {
-    socket = await connect(await waitForDebugPort(userDataDir));
+    socket = await connect(await waitForDebuggerUrl(debugPort, browser, stderrLines));
     const cdp = new Cdp(socket);
     const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
     const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
