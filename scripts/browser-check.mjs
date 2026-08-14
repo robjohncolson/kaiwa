@@ -351,6 +351,23 @@ async function run() {
     check((await js(`document.querySelector(".result-card .answer-reading")?.textContent || ""`)).trim() === "こゆぐん しんとみちょう みなしろ", "place-reading correction shows one explicit reading line");
     await click("Home");
 
+    // A missed multi-kanji word must teach each written character beneath the whole reading.
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: "reading.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return for the kanji-component check");
+    await navigateTool("One quick card");
+    check(await js(`document.querySelector("#wizard-screen")?.dataset.itemId`) === "reading-card.minashiro", "exact reading focus opens 三納代");
+    await answerCard(false);
+    await click("Break it down");
+    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.componentIds.length`) === 3, "三納代 decomposes into 三, 納, and 代 cards");
+    await click("Start parts");
+    check(await title() === "Rebuild the written word.", "kanji remediation names the written-word task");
+    check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Reading → written form")`)), "kanji remediation labels its direction");
+    check(Boolean(await js(`document.querySelector(".prompt-japanese")?.textContent.includes("□")`)), "kanji remediation masks exactly one written component");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.breakdown.active = null; state.focus = { scenarioId: "miyazaki-readings", skillId: "geo.miyazaki_address", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return after the kanji-component check");
+
     // A normal card miss opens a persisted component -> integration cycle.
     await navigateTool("One quick card");
     await answerCard(false);

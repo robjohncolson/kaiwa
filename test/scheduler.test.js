@@ -105,6 +105,26 @@ test("scenario reading focus excludes phrase cards and persists between reviews"
   assert.deepEqual(practiced.focus, focused.focus);
 });
 
+test("remediation-only components never leak into ordinary or focused scheduling", () => {
+  const remediation = {
+    id: "root-kanji-part",
+    skillId: "root",
+    scenarioId: "normal",
+    mode: "kanji",
+    remediationOnly: true,
+    priority: 100,
+    options
+  };
+  const initial = createInitialState(tree, NOW);
+  const focused = {
+    ...initial,
+    focus: { scenarioId: "normal", skillId: "root", mode: null }
+  };
+
+  assert.notEqual(selectNextItem([...items, remediation], tree, initial, NOW).id, remediation.id);
+  assert.deepEqual(focusCandidates([...items, remediation], tree, focused).map((item) => item.id), ["a-root"]);
+});
+
 test("a miss stays due and steps backward", () => {
   let state = createInitialState(tree, NOW);
   state = applyObservation(state, items[0], true, NOW);

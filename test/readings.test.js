@@ -5,8 +5,11 @@ import { readFile } from "node:fs/promises";
 import { probabilityKnown } from "../src/mastery.js";
 import {
   augmentTreeWithReadings,
+  createReadingCharacterItems,
   createReadingItems,
   itemTestsReading,
+  kanjiCharacters,
+  readingCharacterSkillId,
   readingIsReady,
   readingEntriesIn,
   readingSkillId,
@@ -87,6 +90,40 @@ test("every ruby entry generates an objective reading card and BKT skill", async
     assert.ok(nodeIds.has(readingSkillId(entry)), `Missing BKT node for ${entry.term}`);
     assert.notEqual(readingSkillId(entry), entry.skillId, `${entry.term} reading must not share phrase BKT`);
   }
+});
+
+test("multi-kanji readings generate remediation-only cards for every written character", async () => {
+  const [content, baseTree, readings] = await Promise.all([
+    readJson("../data/scenarios.json"),
+    readJson("../data/tree.json"),
+    readJson("../data/readings.json")
+  ]);
+  const tree = augmentTreeWithReadings(baseTree, readings);
+  const entry = readings.entries.find((candidate) => candidate.id === "minashiro");
+  const cards = createReadingCharacterItems(readings, content)
+    .filter((item) => item.skillId.startsWith("reading-character.minashiro."));
+  const nodeIds = new Set(tree.nodes.map((node) => node.id));
+
+  assert.deepEqual(kanjiCharacters(entry.term), ["三", "納", "代"]);
+  assert.deepEqual(cards.map((card) => card.prompt), [
+    "みなしろ → □納代",
+    "みなしろ → 三□代",
+    "みなしろ → 三納□"
+  ]);
+  assert.equal(cards.length, 3);
+  cards.forEach((card, index) => {
+    assert.equal(card.remediationOnly, true);
+    assert.equal(card.mode, "kanji");
+    assert.equal(card.breakdownLeaf, true);
+    assert.equal(card.options.length, 3);
+    assert.equal(card.options.filter((option) => option.correct).length, 1);
+    assert.ok(nodeIds.has(readingCharacterSkillId(entry, index)));
+    assert.ok(tree.decompositions.some((edge) =>
+      edge.from === readingCharacterSkillId(entry, index)
+      && edge.to === readingSkillId(entry)
+    ));
+    assert.match(card.answer.note, /not a universal reading/);
+  });
 });
 
 test("cards that ask for pronunciation explicitly suppress prompt furigana", async () => {

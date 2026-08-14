@@ -488,6 +488,7 @@ function breakdownCardReason(active, item) {
     explicit: "authored component",
     grammar: "grammar pattern",
     pragmatic: "social meaning",
+    kanji: "written kanji component",
     decomposition: "phrase component",
     prerequisite: "direct prerequisite",
     reading: "contextual reading",
@@ -552,22 +553,28 @@ function renderCard() {
       ? `${repairSession().outcomes.length} of ${repairSession().cardIds.length}`
       : "scheduler selected";
   const isReadingCard = itemTestsReading(item);
+  const isKanjiCard = item.mode === "kanji";
   screenHeading(
     item.scenarioTitle,
-    isReadingCard ? "Match the word to its reading." : "Read the Japanese first.",
+    isKanjiCard
+      ? "Rebuild the written word."
+      : isReadingCard ? "Match the word to its reading." : "Read the Japanese first.",
     item.instruction
   );
   dom.screen.dataset.itemId = item.id;
   setChrome({
-    title: isReadingCard ? "Does this reading match?" : "Is this the answer?",
+    title: isKanjiCard ? "Which kanji fits?" : isReadingCard ? "Does this reading match?" : "Is this the answer?",
     context: `${progress} · ${Math.round(probabilityKnown(skill) * 100)}% BKT`,
     progress: cardUi.answered ? 0.72 : 0.52
   });
 
   const prompt = element("p", "prompt-japanese");
-  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard });
+  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard || isKanjiCard });
   dom.screen.append(prompt);
-  addMeta(isReadingCard ? "Written form → hiragana" : "Japanese → meaning", `${item.options.length} candidates`);
+  addMeta(
+    isKanjiCard ? "Reading → written form" : isReadingCard ? "Written form → hiragana" : "Japanese → meaning",
+    `${item.options.length} candidates`
+  );
   const reason = context === "repair"
     ? "Field repair · recent conversation friction"
     : context === "breakdown"
@@ -587,10 +594,10 @@ function renderCard() {
     candidate.append(element(
       "p",
       "candidate-label",
-      `${isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${options.length}`
+      `${isKanjiCard ? "Possible kanji" : isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${options.length}`
     ));
-    const label = element("p", `candidate-text${isReadingCard ? " candidate-japanese" : ""}`);
-    appendJapanese(label, option.label, { alwaysShow: true });
+    const label = element("p", `candidate-text${isReadingCard || isKanjiCard ? " candidate-japanese" : ""}`);
+    appendJapanese(label, option.label, isKanjiCard ? { neverShow: true } : { alwaysShow: true });
     candidate.append(label);
     dom.screen.append(candidate);
     setActions(
@@ -755,7 +762,7 @@ function renderBreakdownOverview() {
   const copy = active.phase === "components"
     ? active.round === "revisit"
       ? "The delayed whole-phrase miss reopened the most relevant nodes. Clean them, then try the phrase again."
-      : "The miss has been traced into weak grammar, pragmatic, prerequisite, and reading nodes. A selected distractor is promoted when it identifies a specific confusion."
+      : "The miss has been traced into weak kanji, grammar, pragmatic, prerequisite, and reading nodes. A selected distractor is promoted when it identifies a specific confusion."
     : active.phase === "retry"
       ? progress.atomic
         ? "This is an honest atomic leaf: study its correction, then retrieve the whole card without invented subskills."

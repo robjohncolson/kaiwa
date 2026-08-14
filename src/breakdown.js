@@ -59,11 +59,12 @@ function addCandidate(candidates, item, relationship, depth = 0) {
     explicit: 1,
     grammar: 2,
     pragmatic: 2,
-    decomposition: 3,
-    prerequisite: 4,
-    reading: 5,
-    foundation: 6
-  }[relationship] ?? 7;
+    kanji: 3,
+    decomposition: 4,
+    prerequisite: 5,
+    reading: 6,
+    foundation: 7
+  }[relationship] ?? 8;
   const existing = candidates.get(item.id);
   if (!existing || rank < existing.rank || depth < existing.depth) {
     candidates.set(item.id, { item, relationship, rank, depth });
@@ -99,7 +100,7 @@ export function breakdownComponents({
   }
 
   for (const component of decompositionSkillIds(tree, item.skillId)) {
-    const relationship = new Set(["grammar", "pragmatic"]).has(component.kind)
+    const relationship = new Set(["grammar", "pragmatic", "kanji"]).has(component.kind)
       ? component.kind
       : "decomposition";
     addCandidate(candidates, bestItemForSkill(items, component.id, item.scenarioId), relationship, component.depth);
