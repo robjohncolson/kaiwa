@@ -40,6 +40,22 @@ export function actionPair(...actions) {
   return visible;
 }
 
+export function shuffleCandidates(options, random = Math.random) {
+  if (!Array.isArray(options) || options.length < 2) {
+    throw new TypeError("A candidate question needs at least two options.");
+  }
+  const shuffled = [...options];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const sample = random();
+    if (!Number.isFinite(sample) || sample < 0 || sample >= 1) {
+      throw new TypeError("Candidate shuffling needs random values from 0 up to, but not including, 1.");
+    }
+    const swapIndex = Math.floor(sample * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 export function candidateAnswer({ options, index, rejectedCorrect = false, accepted }) {
   if (!Array.isArray(options) || options.length < 2) {
     throw new TypeError("A candidate question needs at least two options.");

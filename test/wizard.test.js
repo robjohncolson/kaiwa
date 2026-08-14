@@ -7,7 +7,8 @@ import {
   answerFieldDecision,
   candidateAnswer,
   cycleIndex,
-  FIELD_DECISION_START
+  FIELD_DECISION_START,
+  shuffleCandidates
 } from "../src/wizard.js";
 
 const root = new URL("../", import.meta.url);
@@ -56,4 +57,21 @@ test("three-choice cards become an objective yes-no candidate sequence", () => {
     complete: true,
     correct: false
   });
+});
+
+test("candidate shuffling changes answer position without mutating content", () => {
+  const options = [
+    { id: "correct", correct: true },
+    { id: "wrong-a", correct: false },
+    { id: "wrong-b", correct: false }
+  ];
+  const originalIds = options.map((option) => option.id);
+  const movedToEnd = shuffleCandidates(options, () => 0);
+  const samples = [0.4, 0];
+  const movedToMiddle = shuffleCandidates(options, () => samples.shift());
+
+  assert.deepEqual(options.map((option) => option.id), originalIds);
+  assert.equal(movedToEnd.findIndex((option) => option.correct), 2);
+  assert.equal(movedToMiddle.findIndex((option) => option.correct), 1);
+  assert.deepEqual(new Set(movedToEnd.map((option) => option.id)), new Set(originalIds));
 });

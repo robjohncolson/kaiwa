@@ -66,7 +66,8 @@ import {
   candidateAnswer,
   cycleIndex,
   fieldDecision,
-  FIELD_DECISION_START
+  FIELD_DECISION_START,
+  shuffleCandidates
 } from "./wizard.js";
 
 const PRODUCTION_URL = "https://kaiwa-nine.vercel.app/";
@@ -499,6 +500,13 @@ function breakdownCardReason(active, item) {
   return `${round} · ${labels[relationship] ?? relationship} · ${history}`;
 }
 
+function cardOptions(item) {
+  if (!Array.isArray(cardUi?.optionIds)) return item.options;
+  const byId = new Map(item.options.map((option) => [option.id, option]));
+  const ordered = cardUi.optionIds.map((id) => byId.get(id)).filter(Boolean);
+  return ordered.length === item.options.length ? ordered : item.options;
+}
+
 function showCard(context, explicitItemId = null) {
   if (context !== "breakdown" && breakdownSession()) return show("breakdown-overview");
   let item;
@@ -516,7 +524,8 @@ function showCard(context, explicitItemId = null) {
       answered: false,
       correct: null,
       selectedOptionId: null,
-      diagnosticSkillIds: []
+      diagnosticSkillIds: [],
+      optionIds: shuffleCandidates(item.options).map((option) => option.id)
     };
   } else {
     cardUi.context = context;
@@ -571,13 +580,14 @@ function renderCard() {
   dom.screen.append(reasonCard);
 
   if (!cardUi.answered) {
-    const option = item.options[cardUi.optionIndex];
+    const options = cardOptions(item);
+    const option = options[cardUi.optionIndex];
     const candidate = element("article", "candidate-card");
     candidate.dataset.optionId = option.id;
     candidate.append(element(
       "p",
       "candidate-label",
-      `${isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${item.options.length}`
+      `${isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${options.length}`
     ));
     const label = element("p", `candidate-text${isReadingCard ? " candidate-japanese" : ""}`);
     appendJapanese(label, option.label, { alwaysShow: true });
@@ -636,13 +646,14 @@ function renderCard() {
 }
 
 function answerCardCandidate(item, accepted) {
-  const option = item.options[cardUi.optionIndex];
+  const options = cardOptions(item);
+  const option = options[cardUi.optionIndex];
   if (accepted && !option.correct) {
     cardUi.selectedOptionId = option.id;
     cardUi.diagnosticSkillIds = [...(option.diagnosticSkillIds ?? [])];
   }
   const result = candidateAnswer({
-    options: item.options,
+    options,
     index: cardUi.optionIndex,
     rejectedCorrect: cardUi.rejectedCorrect,
     accepted
