@@ -2,6 +2,7 @@
   "schemaVersion": 2,
   "readyThreshold": 0.55,
   "readyMinCorrect": 2,
+  "readyMinCardCorrect": 2,
   "bkt": {
     "pKnown": 0.3,
     "pLearn": 0.12,

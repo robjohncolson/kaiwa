@@ -1,4 +1,5 @@
 const SOURCES = Object.freeze(["card", "mission", "roleplay", "hint"]);
+export const SPACED_RETRIEVAL_GAP_MS = 12 * 60 * 60 * 1000;
 
 function clampProbability(value, fallback) {
   return Number.isFinite(value) ? Math.min(0.999, Math.max(0.001, value)) : fallback;
@@ -14,9 +15,16 @@ export function probabilityKnown(skillState) {
 
 export function skillIsReady(tree, skillState) {
   const threshold = tree.readyThreshold ?? 0.55;
-  const minimumCorrect = tree.readyMinCorrect ?? 2;
+  const minimumCardCorrect = tree.readyMinCardCorrect ?? tree.readyMinCorrect ?? 2;
+  const cardCorrect = skillState?.observations?.card?.correct ?? 0;
+  const lastCardObservedAt = skillState?.lastCardObservedAt;
+  const lastRoleplaySuccessAt = skillState?.lastRoleplaySuccessAt;
   return probabilityKnown(skillState) >= threshold
-    && (skillState?.correct ?? 0) >= minimumCorrect;
+    && cardCorrect >= minimumCardCorrect
+    && Number.isFinite(skillState?.lastSpacedCardCorrectAt)
+    && skillState?.lastCardOutcome === "correct"
+    && (!Number.isFinite(lastRoleplaySuccessAt)
+      || (Number.isFinite(lastCardObservedAt) && lastCardObservedAt > lastRoleplaySuccessAt));
 }
 
 export function observeBkt(
@@ -44,6 +52,13 @@ export function observeBkt(
     : pKnown;
   const learned = posterior + (1 - posterior) * pLearn;
   const sourceState = skillState.observations?.[source] ?? { correct: 0, incorrect: 0 };
+  const previousExposureAt = Number.isFinite(skillState.lastExposureAt)
+    ? skillState.lastExposureAt
+    : skillState.lastPracticedAt;
+  const spacedCardCorrect = source === "card"
+    && correct
+    && Number.isFinite(previousExposureAt)
+    && now - previousExposureAt >= SPACED_RETRIEVAL_GAP_MS;
 
   return {
     ...skillState,
@@ -62,6 +77,12 @@ export function observeBkt(
       }
     },
     lastOutcome: correct ? "correct" : "incorrect",
-    lastPracticedAt: now
+    lastPracticedAt: now,
+    lastExposureAt: now,
+    lastEvidenceSource: source,
+    lastCardObservedAt: source === "card" ? now : skillState.lastCardObservedAt ?? null,
+    lastCardOutcome: source === "card" ? (correct ? "correct" : "incorrect") : skillState.lastCardOutcome ?? null,
+    lastSpacedCardCorrectAt: spacedCardCorrect ? now : skillState.lastSpacedCardCorrectAt ?? null,
+    lastRoleplaySuccessAt: source === "roleplay" && correct ? now : skillState.lastRoleplaySuccessAt ?? null
   };
 }

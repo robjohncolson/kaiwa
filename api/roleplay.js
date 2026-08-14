@@ -7,11 +7,22 @@ import {
   runRoleplay,
   validateRoleplayInput
 } from "../server/roleplay.js";
+import {
+  authorizeRoleplayRequest,
+  createRoleplayRateLimiter,
+  readRoleplayRateLimit,
+  RoleplayAccessError,
+  roleplayClientKey
+} from "../server/security.js";
 
-function errorResponse(status, message) {
+const limiter = createRoleplayRateLimiter({ limit: readRoleplayRateLimit() });
+
+function errorResponse(status, message, retryAfter = null) {
+  const headers = { "Cache-Control": "no-store" };
+  if (retryAfter) headers["Retry-After"] = String(retryAfter);
   return Response.json({ error: message }, {
     status,
-    headers: { "Cache-Control": "no-store" }
+    headers
   });
 }
 
@@ -22,15 +33,21 @@ export default {
     }
 
     try {
+      authorizeRoleplayRequest(request);
+      limiter.check(roleplayClientKey(request));
       const contentLength = Number(request.headers.get("content-length") ?? 0);
       if (contentLength > 32 * 1024) {
         throw new RoleplayInputError("Request body is too large.");
       }
       let body;
       try {
-        body = await request.json();
+        const raw = await request.text();
+        if (new TextEncoder().encode(raw).byteLength > 32 * 1024) {
+          throw new RoleplayInputError("Request body is too large.");
+        }
+        body = JSON.parse(raw);
       } catch {
-        throw new RoleplayInputError("Request body must be valid JSON.");
+        throw new RoleplayInputError("Request body must be valid JSON and under 32 KB.");
       }
 
       const config = readProviderConfig();
@@ -41,6 +58,7 @@ export default {
         headers: { "Cache-Control": "no-store" }
       });
     } catch (error) {
+      if (error instanceof RoleplayAccessError) return errorResponse(error.status, error.message, error.retryAfter);
       if (error instanceof RoleplayInputError) return errorResponse(400, error.message);
       if (error instanceof RoleplayConfigError) return errorResponse(503, error.message);
       if (error instanceof RoleplayProviderError) return errorResponse(502, error.message);

@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 .vercel/
+data/private-overlay.local.json
+.kaiwa-private-denylist

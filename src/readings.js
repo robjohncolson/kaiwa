@@ -4,7 +4,12 @@ const HAN = /\p{Script=Han}/u;
 
 export function readingIsReady(readings, skillState) {
   return probabilityKnown(skillState) >= (readings.furiganaThreshold ?? 0.75)
-    && (skillState?.readingCheckpointStreak ?? 0) >= (readings.furiganaMinStreak ?? 2);
+    && (skillState?.readingCheckpointStreak ?? 0) >= (readings.furiganaMinStreak ?? 2)
+    && (skillState?.observations?.card?.correct ?? 0) >= (readings.furiganaMinCardCorrect ?? 2)
+    && Number.isFinite(skillState?.lastSpacedCardCorrectAt)
+    && skillState?.lastCardOutcome === "correct"
+    && (!Number.isFinite(skillState?.lastRoleplaySuccessAt)
+      || skillState.lastCardObservedAt > skillState.lastRoleplaySuccessAt);
 }
 
 export function readingSkillId(entry) {
@@ -91,23 +96,47 @@ function hash(value) {
   return [...value].reduce((total, character) => total + character.codePointAt(0), 0);
 }
 
-function distractorReadings(entry, readings) {
-  if (entry.distractors?.length === 2) return entry.distractors;
+export function validateOptionSet(options, label = "Generated card") {
+  if (!Array.isArray(options) || options.length !== 3) {
+    throw new TypeError(`${label} must have exactly three options.`);
+  }
+  if (options.filter((option) => option.correct === true).length !== 1) {
+    throw new TypeError(`${label} must have exactly one correct option.`);
+  }
+  if (new Set(options.map((option) => option.id)).size !== options.length
+    || new Set(options.map((option) => option.label)).size !== options.length) {
+    throw new TypeError(`${label} options must have unique IDs and labels.`);
+  }
+  return options;
+}
+
+function distractorReadings(entry, readings, salt = 0) {
+  if (entry.distractors != null) {
+    if (!Array.isArray(entry.distractors)
+      || entry.distractors.length !== 2
+      || new Set(entry.distractors).size !== 2
+      || entry.distractors.includes(entry.reading)) {
+      throw new TypeError(`Reading distractors for ${entry.id} must be distinct from the answer.`);
+    }
+    return entry.distractors;
+  }
   const candidates = [...new Set(readings.entries
     .filter((candidate) => candidate.reading !== entry.reading)
     .map((candidate) => candidate.reading))];
-  const start = hash(entry.id) % candidates.length;
+  if (candidates.length < 2) throw new TypeError(`Not enough reading distractors for ${entry.id}.`);
+  const start = hash(`${entry.id}.${salt}`) % candidates.length;
   return [candidates[start], candidates[(start + Math.max(1, Math.floor(candidates.length / 2))) % candidates.length]];
 }
 
-function orderedOptions(entry, readings) {
-  const values = [entry.reading, ...distractorReadings(entry, readings)];
-  const shift = hash(entry.id) % values.length;
-  return values.map((_, index) => values[(index + shift) % values.length]).map((reading, index) => ({
-    id: `${entry.id}.${index}`,
+function orderedOptions(entry, readings, salt = 0) {
+  const values = [entry.reading, ...distractorReadings(entry, readings, salt)];
+  const shift = hash(`${entry.id}.${salt}`) % values.length;
+  const options = values.map((_, index) => values[(index + shift) % values.length]).map((reading) => ({
+    id: `${entry.id}.reading.${reading}`,
     label: reading,
     correct: reading === entry.reading
   }));
+  return validateOptionSet(options, `Reading card ${entry.id}`);
 }
 
 export function createReadingItems(readings, contentPack) {
@@ -143,7 +172,7 @@ export function createReadingItems(readings, contentPack) {
   });
 }
 
-function facetDistractors(entry, readings, labelFor, facet) {
+function facetDistractors(entry, readings, labelFor, facet, salt = 0) {
   const correctLabel = labelFor(entry);
   const seenLabels = new Set([correctLabel]);
   const selected = [];
@@ -152,7 +181,7 @@ function facetDistractors(entry, readings, labelFor, facet) {
     readings.entries.filter((candidate) => candidate.id !== entry.id && candidate.scenarioId !== entry.scenarioId)
   ];
   for (const pool of pools) {
-    const start = pool.length > 0 ? hash(`${entry.id}.${facet}.${pool.length}`) % pool.length : 0;
+    const start = pool.length > 0 ? hash(`${entry.id}.${facet}.${pool.length}.${salt}`) % pool.length : 0;
     for (let offset = 0; offset < pool.length && selected.length < 2; offset += 1) {
       const candidate = pool[(start + offset) % pool.length];
       const label = labelFor(candidate);
@@ -165,16 +194,17 @@ function facetDistractors(entry, readings, labelFor, facet) {
   return selected;
 }
 
-function facetOptions(entry, readings, { facet, labelFor, diagnosticFor }) {
-  const candidates = [entry, ...facetDistractors(entry, readings, labelFor, facet)];
+function facetOptions(entry, readings, { facet, labelFor, diagnosticFor, salt = 0 }) {
+  const candidates = [entry, ...facetDistractors(entry, readings, labelFor, facet, salt)];
   if (candidates.length !== 3) throw new TypeError(`Not enough distinct ${facet} distractors for ${entry.id}.`);
-  const shift = hash(`${facet}.${entry.id}`) % candidates.length;
-  return candidates.map((_, index) => candidates[(index + shift) % candidates.length]).map((candidate, index) => ({
-    id: `${entry.id}.${facet}.${index}`,
+  const shift = hash(`${facet}.${entry.id}.${salt}`) % candidates.length;
+  const options = candidates.map((_, index) => candidates[(index + shift) % candidates.length]).map((candidate) => ({
+    id: `${entry.id}.${facet}.${candidate.id}`,
     label: labelFor(candidate),
     correct: candidate.id === entry.id,
     ...(candidate.id === entry.id ? {} : { diagnosticSkillIds: diagnosticFor(candidate) })
   }));
+  return validateOptionSet(options, `${facet} card ${entry.id}`);
 }
 
 export function createWordFacetItems(readings, contentPack) {
@@ -277,20 +307,59 @@ function maskKanji(term, targetIndex) {
   }).join("");
 }
 
-function characterOptions(entry, index, readings) {
+function characterOptions(entry, index, readings, salt = 0) {
   const correct = kanjiCharacters(entry.term)[index];
   const pool = [...new Set([
     ...kanjiCharacters(entry.term),
     ...readings.entries.flatMap((candidate) => kanjiCharacters(candidate.term))
   ])].filter((character) => character !== correct);
-  const start = hash(`${entry.id}.${index}`) % pool.length;
+  if (pool.length < 2) throw new TypeError(`Not enough kanji distractors for ${entry.id}.`);
+  const start = hash(`${entry.id}.${index}.${salt}`) % pool.length;
   const values = [correct, pool[start], pool[(start + Math.max(1, Math.floor(pool.length / 2))) % pool.length]];
-  const shift = hash(`${index}.${entry.id}`) % values.length;
-  return values.map((_, optionIndex) => values[(optionIndex + shift) % values.length]).map((character, optionIndex) => ({
-    id: `${entry.id}.character.${index}.${optionIndex}`,
+  const shift = hash(`${index}.${entry.id}.${salt}`) % values.length;
+  const options = values.map((_, optionIndex) => values[(optionIndex + shift) % values.length]).map((character) => ({
+    id: `${entry.id}.character.${index}.${character}`,
     label: character,
     correct: character === correct
   }));
+  return validateOptionSet(options, `Kanji card ${entry.id}.${index}`);
+}
+
+export function generatedOptionsForAttempt(item, readings, attempt = 0) {
+  if (!item?.wordId) return item.options;
+  const entry = readings.entries.find((candidate) => candidate.id === item.wordId);
+  if (!entry) throw new TypeError(`Unknown generated-card word ${item.wordId}.`);
+  const salt = Math.max(0, Number.isInteger(attempt) ? attempt : 0);
+  if (item.mode === "reading") return orderedOptions(entry, readings, salt);
+  if (item.mode === "word-form") {
+    return facetOptions(entry, readings, {
+      facet: "written-form",
+      labelFor: (candidate) => candidate.term,
+      diagnosticFor: (candidate) => [readingSkillId(candidate)],
+      salt
+    });
+  }
+  if (item.mode === "word-meaning") {
+    return facetOptions(entry, readings, {
+      facet: "meaning-recognition",
+      labelFor: (candidate) => candidate.meaning,
+      diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)],
+      salt
+    });
+  }
+  if (item.mode === "word-recall") {
+    return facetOptions(entry, readings, {
+      facet: "meaning-recall",
+      labelFor: (candidate) => candidate.term,
+      diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)],
+      salt
+    });
+  }
+  if (item.mode === "kanji") {
+    const index = Number(item.id.split(".").at(-1));
+    return characterOptions(entry, index, readings, salt);
+  }
+  return item.options;
 }
 
 export function createReadingCharacterItems(readings, contentPack) {

@@ -3,6 +3,18 @@ export const LLM_ENV = Object.freeze({
   apiKey: "KAIWA_LLM_API_KEY",
   model: "KAIWA_LLM_MODEL"
 });
+export const ROLEPLAY_TOKEN_KEY = "kaiwa.roleplay-token.v1";
+
+export function readRoleplayAccessToken(storage = globalThis.localStorage) {
+  return storage?.getItem(ROLEPLAY_TOKEN_KEY)?.trim() ?? "";
+}
+
+export function saveRoleplayAccessToken(token, storage = globalThis.localStorage) {
+  const value = String(token ?? "").trim();
+  if (value) storage?.setItem(ROLEPLAY_TOKEN_KEY, value);
+  else storage?.removeItem(ROLEPLAY_TOKEN_KEY);
+  return value;
+}
 
 async function readJsonResponse(response) {
   try {
@@ -23,7 +35,8 @@ export async function getRoleplayConfig(fetchImpl = fetch) {
 
 export async function requestRoleplay(payload, {
   fetchImpl = fetch,
-  timeoutMs = 25_000
+  timeoutMs = 25_000,
+  token = readRoleplayAccessToken()
 } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -33,6 +46,7 @@ export async function requestRoleplay(payload, {
       method: "POST",
       headers: {
         Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),

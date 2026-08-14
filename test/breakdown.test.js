@@ -5,17 +5,21 @@ import { readFile } from "node:fs/promises";
 import {
   MAX_BREAKDOWN_DEPTH,
   MAX_BREAKDOWN_GRAPH_NODES,
+  BREAKDOWN_REVISIT_GUESS_PROBABILITY,
+  activateAvailableBreakdown,
   archiveCompletedBreakdown,
   beginBreakdownRevisit,
   breakdownComponents,
   breakdownProgress,
   buildBreakdownSession,
   currentBreakdownCard,
+  queueBreakdown,
   recordBreakdownComponent,
-  recordBreakdownRetry
+  recordBreakdownRetry,
+  scheduleWaitingBreakdown
 } from "../src/breakdown.js";
 import { augmentTreeWithReadings } from "../src/readings.js";
-import { applyObservation, flattenItems } from "../src/scheduler.js";
+import { applyObservation, flattenItems, recordRebuildObservation } from "../src/scheduler.js";
 import { createInitialState } from "../src/store.js";
 
 const NOW = 1_700_000_000_000;
@@ -309,4 +313,42 @@ test("another failed integration activates deferred components in a bounded batc
   assert.deepEqual(session.queue, initialDeferred.slice(0, 6));
   assert.equal(session.componentIds.length, 6 + session.queue.length);
   assert.equal(session.deferredCount, Math.max(0, initialDeferred.length - 6));
+});
+
+test("immediate rebuild is non-BKT and the short revisit cannot erase the original miss", async () => {
+  const { tree, items } = await fixtures();
+  const item = items.find((candidate) => candidate.id === "reading-card.tsugi");
+  let state = createInitialState(tree, NOW);
+  const before = state.skills[item.skillId].pKnown;
+  state = applyObservation(state, item, false, NOW);
+  const afterMiss = state.skills[item.skillId].pKnown;
+  state = recordRebuildObservation(state, item, true, NOW + 1);
+  assert.equal(state.skills[item.skillId].pKnown, afterMiss);
+  assert.deepEqual(state.skills[item.skillId].rebuild, {
+    attempts: 1,
+    correct: 1,
+    incorrect: 0,
+    lastAt: NOW + 1
+  });
+  state = applyObservation(state, item, true, NOW + 10 * 60 * 1000, {
+    guessProbability: BREAKDOWN_REVISIT_GUESS_PROBABILITY
+  });
+  assert.ok(state.skills[item.skillId].pKnown < before);
+});
+
+test("waiting breakdowns interleave, become due, and queued session misses wait their turn", async () => {
+  const { tree, readings, items, state } = await fixtures();
+  const item = items.find((candidate) => candidate.id === "reading-card.tsugi");
+  let session = buildBreakdownSession({ item, items, tree, readings, state, returnContext: "session", now: NOW });
+  session = recordBreakdownRetry(session, item, true, NOW + 1);
+  let breakdownState = scheduleWaitingBreakdown({ active: session, queued: [], scheduled: [], recent: [] });
+  assert.equal(breakdownState.active, null);
+  assert.equal(activateAvailableBreakdown(breakdownState, NOW + 2).active, null);
+  breakdownState = queueBreakdown(breakdownState, buildBreakdownSession({ item, items, tree, readings, state, now: NOW + 2 }));
+  assert.equal(activateAvailableBreakdown(breakdownState, NOW + 2, { includeQueued: false }).active, null);
+  const queued = activateAvailableBreakdown(breakdownState, NOW + 2, { includeQueued: true });
+  assert.equal(queued.active.startedAt, NOW + 2);
+  const due = activateAvailableBreakdown({ ...breakdownState, queued: [] }, session.revisitAt);
+  assert.equal(due.active.phase, "revisit");
+  assert.equal(due.scheduled.length, 0);
 });

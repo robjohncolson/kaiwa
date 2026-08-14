@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "furiganaThreshold": 0.75,
   "furiganaMinStreak": 2,
+  "furiganaMinCardCorrect": 2,
   "entries": [
     { "id": "nihongo", "term": "日本語", "reading": "にほんご", "meaning": "Japanese language", "scenarioId": "essentials", "context": "日本語がわかりません" },
     { "id": "fukuokaten", "term": "福岡店", "reading": "ふくおかてん", "meaning": "Fukuoka store/branch", "scenarioId": "shimamura-pickup" },

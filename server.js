@@ -13,6 +13,13 @@ import {
   runRoleplay,
   validateRoleplayInput
 } from "./server/roleplay.js";
+import {
+  authorizeRoleplayRequest,
+  createRoleplayRateLimiter,
+  readRoleplayRateLimit,
+  RoleplayAccessError,
+  roleplayClientKey
+} from "./server/security.js";
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const contentPack = JSON.parse(await readFile(path.join(ROOT, "data/scenarios.json"), "utf8"));
@@ -96,6 +103,10 @@ async function serveStatic(request, response, pathname) {
 }
 
 export function createKaiwaServer({ env = process.env, fetchImpl = fetch } = {}) {
+  const roleplayLimiter = createRoleplayRateLimiter({
+    limit: readRoleplayRateLimit(env),
+    windowMs: 60_000
+  });
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://kaiwa.local");
     try {
@@ -104,6 +115,8 @@ export function createKaiwaServer({ env = process.env, fetchImpl = fetch } = {})
         return;
       }
       if (request.method === "POST" && url.pathname === "/api/roleplay") {
+        authorizeRoleplayRequest(request, env);
+        roleplayLimiter.check(roleplayClientKey(request));
         const config = readProviderConfig(env);
         if (!config) throw new RoleplayConfigError("Routed roleplay is not configured.");
         const input = validateRoleplayInput(await readJsonBody(request), contentPack.scenarios);
@@ -117,7 +130,11 @@ export function createKaiwaServer({ env = process.env, fetchImpl = fetch } = {})
       }
       await serveStatic(request, response, url.pathname);
     } catch (error) {
-      if (error instanceof RoleplayInputError) sendJson(response, 400, { error: error.message });
+      if (error instanceof RoleplayAccessError) {
+        if (error.retryAfter) response.setHeader("Retry-After", String(error.retryAfter));
+        sendJson(response, error.status, { error: error.message });
+      }
+      else if (error instanceof RoleplayInputError) sendJson(response, 400, { error: error.message });
       else if (error instanceof RoleplayConfigError) sendJson(response, 503, { error: error.message });
       else if (error instanceof RoleplayProviderError) sendJson(response, 502, { error: error.message });
       else {

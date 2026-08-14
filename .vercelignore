@@ -5,3 +5,7 @@ CODEX_PROMPT.md
 README.md
 REVIEW.md
 server.js
+FABLE_NEXT_STEPS_PROMPT.md
+FABLE_REVIEW.md
+data/private-overlay.local.json
+.kaiwa-private-denylist

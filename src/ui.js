@@ -1,22 +1,37 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import {
+  clearPrivateOverlay,
+  loadPrivateOverlay,
+  mergeContentOverlay,
+  parsePrivateOverlay,
+  savePrivateOverlay,
+  validateSkillGraph
+} from "./content.js";
+import {
   MAX_BREAKDOWN_COMPONENTS,
   MAX_BREAKDOWN_DEPTH,
   MAX_BREAKDOWN_GRAPH_NODES,
+  BREAKDOWN_REVISIT_GUESS_PROBABILITY,
+  activateAvailableBreakdown,
   abandonBreakdown,
   archiveCompletedBreakdown,
   beginBreakdownRevisit,
   breakdownProgress,
+  breakdownDue,
   buildBreakdownSession,
   currentBreakdownCard,
+  queueBreakdown,
   recordBreakdownComponent,
-  recordBreakdownRetry
+  recordBreakdownRetry,
+  scheduleWaitingBreakdown
 } from "./breakdown.js";
 import {
   advanceMissionRun,
   answerMissionStep,
   createMissionRun,
+  ensureMissionChoiceOrders,
   gradeProductionStep,
+  missionChoiceSkillIds,
   missionById,
   missionLineIndex,
   recordMissionCompletion,
@@ -36,15 +51,27 @@ import {
   repairHandledFieldEvent,
   REPAIRABLE_FIELD_OUTCOMES
 } from "./repair.js";
-import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
+import {
+  getRoleplayConfig,
+  readRoleplayAccessToken,
+  requestRoleplay,
+  saveRoleplayAccessToken
+} from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
+  generatedOptionsForAttempt,
   itemTestsReading,
   readingIsReady,
   readingSkillId,
   tokenizeReadings
 } from "./readings.js";
-import { applyObservation, flattenItems, selectNextItem } from "./scheduler.js";
+import {
+  applyObservation,
+  flattenItems,
+  recordAssistedObservation,
+  recordRebuildObservation,
+  selectNextItem
+} from "./scheduler.js";
 import {
   archiveCompletedSession,
   buildGuidedSession,
@@ -95,6 +122,7 @@ const dom = {
   secondary: document.querySelector("#action-secondary"),
   primary: document.querySelector("#action-primary"),
   progressImport: document.querySelector("#progress-import"),
+  contentImport: document.querySelector("#content-import"),
   toast: document.querySelector("#toast")
 };
 
@@ -111,6 +139,9 @@ let missionChoiceUi = null;
 let completedMissionRun = null;
 let tickerId = null;
 let passport = { raw: null, preview: null, file: null, shareSupported: false };
+let overlayDraft = null;
+let basePacks = null;
+let overlayStatus = { installed: false, error: null };
 let roleplay = {
   available: false,
   model: null,
@@ -364,6 +395,13 @@ function repairActivityState() {
     state = { ...state, mission: { ...state.mission, active: null } };
     changed = true;
   }
+  if (state.mission.active?.mode === "recognition") {
+    const hydrated = ensureMissionChoiceOrders(state.mission.active, missionForId(state.mission.active.missionId));
+    if (hydrated !== state.mission.active) {
+      state = { ...state, mission: { ...state.mission, active: hydrated } };
+      changed = true;
+    }
+  }
   if (!sessionIsValid(state.session?.active)) {
     state = { ...state, session: { ...state.session, active: null } };
     changed = true;
@@ -372,12 +410,32 @@ function repairActivityState() {
     state = { ...state, breakdown: { ...state.breakdown, active: null } };
     changed = true;
   }
+  const validQueued = (state.breakdown?.queued ?? []).filter((session) =>
+    breakdownIsValid(session) && session.phase !== "waiting"
+  );
+  const validScheduled = (state.breakdown?.scheduled ?? []).filter((session) =>
+    breakdownIsValid(session) && session.phase === "waiting"
+  );
+  if (validQueued.length !== (state.breakdown?.queued?.length ?? 0)
+    || validScheduled.length !== (state.breakdown?.scheduled?.length ?? 0)) {
+    state = {
+      ...state,
+      breakdown: { ...state.breakdown, queued: validQueued, scheduled: validScheduled }
+    };
+    changed = true;
+  }
   if (changed) save();
 }
 
 function primaryPracticeLabel() {
-  if (breakdownSession()) return "Resume breakdown";
+  if (breakdownSession()) return breakdownSession().phase === "waiting" ? "Continue practice" : "Resume breakdown";
+  const guided = guidedSession();
   const repair = repairSession();
+  const canInterleave = (!guided || guided.phase === "complete")
+    && (!repair || repair.phase === "complete");
+  if (canInterleave && (breakdownDue(state.breakdown) || (state.breakdown?.queued?.length ?? 0) > 0)) {
+    return breakdownDue(state.breakdown) ? "Delayed check due" : "Repair missed card";
+  }
   if (repair && repair.phase !== "complete") return "Resume repair";
   if (state.mission.active) return "Resume mission";
   const session = guidedSession();
@@ -408,6 +466,19 @@ function renderHome() {
 }
 
 function resumePractice() {
+  if (breakdownSession()?.phase === "waiting") {
+    state = { ...state, breakdown: scheduleWaitingBreakdown(state.breakdown) };
+    save();
+  }
+  const activeSession = guidedSession();
+  const activeRepair = repairSession();
+  const canInterleave = (!activeSession || activeSession.phase === "complete")
+    && (!activeRepair || activeRepair.phase === "complete");
+  const promoted = activateAvailableBreakdown(state.breakdown, Date.now(), { includeQueued: canInterleave });
+  if (promoted !== state.breakdown) {
+    state = { ...state, breakdown: promoted };
+    save();
+  }
   if (breakdownSession()) return show("breakdown-overview");
   const repair = repairSession();
   if (repair && repair.phase !== "complete") {
@@ -440,6 +511,7 @@ function toolChoices() {
     { id: "roleplay", title: "Optional roleplay", copy: "Use the routed partner only when the HTTP provider is configured.", open: () => openRoleplay() },
     { id: "share", title: "Open on another phone", copy: "Show the QR card for the public Vercel site.", open: () => show("share") },
     { id: "progress", title: "Progress and backup", copy: "Download, restore, or reset local state through confirmations.", open: () => show("progress-menu", { index: 0 }) },
+    { id: "overlay", title: "Private lesson overlay", copy: "Import personal names or lessons into this browser without publishing them with the app.", open: () => show("overlay-home") },
     { id: "home", title: "Back home", copy: "Return to the recommended next practice step.", open: () => show("home") }
   );
   return result;
@@ -535,10 +607,11 @@ function breakdownCardReason(active, item) {
 }
 
 function cardOptions(item) {
-  if (!Array.isArray(cardUi?.optionIds)) return item.options;
-  const byId = new Map(item.options.map((option) => [option.id, option]));
+  const available = cardUi?.options ?? item.options;
+  if (!Array.isArray(cardUi?.optionIds)) return available;
+  const byId = new Map(available.map((option) => [option.id, option]));
   const ordered = cardUi.optionIds.map((id) => byId.get(id)).filter(Boolean);
-  return ordered.length === item.options.length ? ordered : item.options;
+  return ordered.length === available.length ? ordered : available;
 }
 
 function showCard(context, explicitItemId = null) {
@@ -550,6 +623,7 @@ function showCard(context, explicitItemId = null) {
   else item = items.find((candidate) => candidate.id === explicitItemId) ?? selectNextItem(items, tree, state);
   if (!item) return context === "breakdown" ? show("breakdown-overview") : show("home");
   if (screen.name !== "card" || cardUi?.itemId !== item.id) {
+    const options = generatedOptionsForAttempt(item, readings, state.skills[item.skillId]?.attempts ?? 0);
     cardUi = {
       itemId: item.id,
       context,
@@ -559,7 +633,8 @@ function showCard(context, explicitItemId = null) {
       correct: null,
       selectedOptionId: null,
       diagnosticSkillIds: [],
-      optionIds: shuffleCandidates(item.options).map((option) => option.id)
+      options,
+      optionIds: shuffleCandidates(options).map((option) => option.id)
     };
   } else {
     cardUi.context = context;
@@ -752,6 +827,10 @@ function answerCardCandidate(item, accepted) {
     cardUi.rejectedCorrect = result.rejectedCorrect;
     return render();
   }
+  if (!result.correct && cardUi.rejectedCorrect) {
+    cardUi.selectedOptionId = null;
+    cardUi.diagnosticSkillIds = [];
+  }
   cardUi.answered = true;
   cardUi.correct = result.correct;
   applyCardResult(item, result.correct);
@@ -764,9 +843,19 @@ function applyCardResult(item, correct, now = Date.now()) {
   const repairItem = currentRepairCard(repair, items);
   const session = guidedSession();
   const sessionItem = currentSessionCard(session, items);
-  state = applyObservation(state, item, correct, now);
   if (context === "breakdown") {
     const active = breakdownSession();
+    state = active.phase === "retry" && active.round === "integration"
+      ? recordRebuildObservation(state, item, correct, now)
+      : applyObservation(
+        state,
+        item,
+        correct,
+        now,
+        active.phase === "revisit"
+          ? { guessProbability: BREAKDOWN_REVISIT_GUESS_PROBABILITY }
+          : undefined
+      );
     const updated = active.phase === "components"
       ? recordBreakdownComponent(active, item, correct, now)
       : recordBreakdownRetry(active, item, correct, now);
@@ -774,6 +863,7 @@ function applyCardResult(item, correct, now = Date.now()) {
     save();
     return;
   }
+  state = applyObservation(state, item, correct, now);
   if (repairItem?.id === item.id) {
     state = { ...state, repair: { ...state.repair, active: recordRepairCard(repair, item, correct, now) } };
   }
@@ -781,7 +871,7 @@ function applyCardResult(item, correct, now = Date.now()) {
     state = { ...state, session: { ...state.session, active: recordSessionCard(session, item, correct, now) } };
   }
   if (!correct) {
-    const active = buildBreakdownSession({
+    const breakdown = buildBreakdownSession({
       item,
       items,
       tree,
@@ -792,7 +882,12 @@ function applyCardResult(item, correct, now = Date.now()) {
       returnContext: context,
       now
     });
-    state = { ...state, breakdown: { ...state.breakdown, active } };
+    state = {
+      ...state,
+      breakdown: context === "session"
+        ? queueBreakdown(state.breakdown, breakdown)
+        : { ...state.breakdown, active: breakdown }
+    };
   }
   save();
 }
@@ -803,7 +898,7 @@ function nextCardLabel(context) {
   if (context === "breakdown") {
     if (active?.phase === "complete") return "Finish breakdown";
     if (active?.phase === "retry") return "Retry whole card";
-    if (active?.phase === "waiting") return "Schedule revisit";
+    if (active?.phase === "waiting") return "Continue practice";
     if (active?.phase === "revisit") return "Finish delayed check";
     return "Next part";
   }
@@ -816,6 +911,12 @@ function continueAfterCard(context) {
   cardUi = null;
   if (context !== "breakdown" && breakdownSession()) return show("breakdown-overview");
   if (context === "breakdown") {
+    if (breakdownSession()?.phase === "waiting") {
+      const returnContext = breakdownSession().returnContext;
+      state = { ...state, breakdown: scheduleWaitingBreakdown(state.breakdown) };
+      save();
+      return resumeAfterBreakdownContext(returnContext);
+    }
     if (breakdownSession()?.phase === "components") return showCard("breakdown");
     return show("breakdown-overview");
   }
@@ -850,7 +951,7 @@ function renderBreakdownOverview() {
         ? "This is an honest atomic leaf: study its correction, then retrieve the whole card without invented subskills."
         : "The targeted parts are clean, but their evidence cannot mark the parent mastered. Retrieve the complete phrase now."
       : active.phase === "waiting"
-        ? breakdownWaitText(active)
+        ? `${breakdownWaitText(active)} You can keep practicing while this check waits.`
         : active.phase === "revisit"
           ? "The gap is complete. Retrieve the untouched whole phrase once more; this is the check that closes the loop."
           : "The components, immediate integration, and delayed whole-phrase recall all have independent evidence.";
@@ -905,9 +1006,8 @@ function renderBreakdownOverview() {
   if (active.phase === "waiting") {
     const due = active.revisitAt <= Date.now();
     primary = {
-      label: due ? "Start delayed check" : "Not ready",
-      disabled: !due,
-      onClick: startBreakdownRevisit
+      label: due ? "Start delayed check" : "Continue practice",
+      onClick: due ? startBreakdownRevisit : scheduleBreakdownAndResume
     };
     startTicker(() => {
       if (active.revisitAt <= Date.now()) render();
@@ -923,6 +1023,15 @@ function renderBreakdownOverview() {
       : { label: "End breakdown", onClick: confirmEndBreakdown },
     primary
   );
+}
+
+function scheduleBreakdownAndResume() {
+  const active = breakdownSession();
+  if (!active || active.phase !== "waiting") return show("home");
+  const context = active.returnContext;
+  state = { ...state, breakdown: scheduleWaitingBreakdown(state.breakdown) };
+  save();
+  resumeAfterBreakdownContext(context);
 }
 
 function breakdownWaitText(active, now = Date.now()) {
@@ -1366,7 +1475,11 @@ function startMissionRun(mission, options) {
 
 function ensureMissionChoice(run, step) {
   const key = `${run.missionId}.${run.stepIndex}`;
-  if (missionChoiceUi?.key !== key) missionChoiceUi = { key, optionIndex: 0, rejectedCorrect: false };
+  if (missionChoiceUi?.key !== key) missionChoiceUi = {
+    key,
+    optionIndex: run.recognitionOptionIndex ?? 0,
+    rejectedCorrect: run.recognitionRejectedCorrect ?? false
+  };
 }
 
 function renderMissionTurn() {
@@ -1453,18 +1566,14 @@ function gradeProduction(correct) {
 }
 
 function renderRecognitionDecision(run, mission, step) {
-  const skillId = step.choiceSkillIds[missionChoiceUi.optionIndex];
+  const choiceSkillIds = missionChoiceSkillIds(run, step);
+  const skillId = choiceSkillIds[missionChoiceUi.optionIndex];
   const line = missionLines.get(skillId);
   const candidate = element("article", "candidate-card");
-  candidate.append(element("p", "candidate-label", `Candidate ${missionChoiceUi.optionIndex + 1} of ${step.choiceSkillIds.length}`));
+  candidate.append(element("p", "candidate-label", `Candidate ${missionChoiceUi.optionIndex + 1} of ${choiceSkillIds.length}`));
   const japanese = element("p", "candidate-text candidate-japanese");
   appendJapanese(japanese, line.ja, { neverShow: run.hideFurigana });
   candidate.append(japanese);
-  if (!run.hideFurigana) {
-    const meaning = element("p", "line-meaning");
-    appendJapanese(meaning, line.meaning, { alwaysShow: true });
-    candidate.append(meaning);
-  }
   dom.screen.append(candidate);
   setActions(
     { label: "No", onClick: () => answerMissionCandidate(false) },
@@ -1476,25 +1585,40 @@ function answerMissionCandidate(accepted) {
   const active = state.mission.active;
   const mission = missionForId(active.missionId);
   const step = mission.steps[active.stepIndex];
-  const options = step.choiceSkillIds.map((id) => ({ id, correct: id === step.targetSkillId }));
+  const choiceSkillIds = missionChoiceSkillIds(active, step);
+  const options = choiceSkillIds.map((id) => ({ id, correct: id === step.targetSkillId }));
   const decision = candidateAnswer({ options, index: missionChoiceUi.optionIndex, rejectedCorrect: missionChoiceUi.rejectedCorrect, accepted });
   if (!decision.complete) {
     missionChoiceUi.optionIndex = decision.nextIndex;
     missionChoiceUi.rejectedCorrect = decision.rejectedCorrect;
+    state = {
+      ...state,
+      mission: {
+        ...state.mission,
+        active: {
+          ...active,
+          recognitionOptionIndex: decision.nextIndex,
+          recognitionRejectedCorrect: decision.rejectedCorrect
+        }
+      }
+    };
+    save();
     return render();
   }
   const selected = accepted
     ? options[missionChoiceUi.optionIndex].id
-    : options.find((option) => !option.correct).id;
+    : null;
   const run = answerMissionStep(active, mission, selected);
   const observation = run.observations.at(-1);
   const evidenceCorrect = observation.evidenceCorrect && !missionChoiceUi.rejectedCorrect;
   const observationItem = {
     id: `mission.${mission.id}.${step.id}.${observation.observedAt}`,
     skillId: observation.skillId,
-    options: step.choiceSkillIds.map((id) => ({ id }))
+    options: choiceSkillIds.map((id) => ({ id }))
   };
-  state = applyObservation(state, observationItem, evidenceCorrect, observation.observedAt, { source: "mission" });
+  state = observation.usedHint && observation.answerCorrect && !missionChoiceUi.rejectedCorrect
+    ? recordAssistedObservation(state, observationItem, observation.observedAt, { source: "hint" })
+    : applyObservation(state, observationItem, evidenceCorrect, observation.observedAt, { source: "mission" });
   if (evidenceCorrect !== observation.evidenceCorrect) {
     const observations = [...run.observations];
     observations[observations.length - 1] = { ...observation, evidenceCorrect };
@@ -1514,7 +1638,11 @@ function renderMissionFeedback(run, mission, step) {
   card.dataset.result = correct ? "correct" : "incorrect";
   const label = run.mode === "production"
     ? observation.grade === "clean" ? "Said cleanly" : observation.grade === "help" ? "Help recorded" : "Miss recorded"
-    : observation.evidenceCorrect ? "Correct" : observation.answerCorrect ? "Correct after rejecting it" : "Review the fixed response";
+    : observation.evidenceCorrect
+      ? "Correct"
+      : observation.answerCorrect && observation.usedHint
+        ? "Correct with a hint"
+        : observation.answerCorrect ? "Correct after rejecting it" : "Review the fixed response";
   card.append(element("p", "result-label", label));
   const japanese = element("p", "line-japanese");
   appendJapanese(japanese, line.ja, { alwaysShow: true });
@@ -1760,6 +1888,30 @@ function clearFocus() {
 
 function openRoleplay() {
   if (!roleplay.available) return show("roleplay-unavailable");
+  if (!readRoleplayAccessToken()) return show("roleplay-auth");
+  showScenarioChooser("roleplay");
+}
+
+function renderRoleplayAuth() {
+  screenHeading("OPTIONAL ROLEPLAY", "Enter the private access token.", "The token stays in this browser, is never included in a progress backup, and protects the routed provider from public use.");
+  setChrome({ title: "Unlock routed roleplay.", context: "Roleplay · local credential", progress: 0.3 });
+  const label = element("label", "textarea-label", "ACCESS TOKEN");
+  label.htmlFor = "roleplay-token";
+  const input = element("input");
+  input.id = "roleplay-token";
+  input.type = "password";
+  input.autocomplete = "off";
+  input.value = readRoleplayAccessToken();
+  dom.screen.append(label, input);
+  setActions(
+    { label: "Back", onClick: () => show("tools", { index: 0 }) },
+    { label: "Save", onClick: () => saveRoleplayTokenAndContinue(input.value) }
+  );
+  input.focus();
+}
+
+function saveRoleplayTokenAndContinue(raw) {
+  if (!saveRoleplayAccessToken(raw)) return showToast("Enter the configured access token");
   showScenarioChooser("roleplay");
 }
 
@@ -1900,7 +2052,16 @@ function finishRoleplayReview(apply) {
     let applied = 0;
     for (const observation of roleplay.pending.observations) {
       if (observation.outcome === "not_tested") continue;
-      state = applyObservation(state, { id: `roleplay.${observation.skillId}.${Date.now()}`, skillId: observation.skillId }, observation.outcome === "success", Date.now() + applied, { source: "roleplay" });
+      const item = { id: `roleplay.${observation.skillId}.${Date.now()}`, skillId: observation.skillId };
+      state = observation.outcome === "partial"
+        ? recordAssistedObservation(state, item, Date.now() + applied, { source: "roleplay" })
+        : applyObservation(
+          state,
+          item,
+          observation.outcome === "success",
+          Date.now() + applied,
+          { source: "roleplay", guessProbability: 1 / 3 }
+        );
       applied += 1;
     }
     save();
@@ -1915,7 +2076,9 @@ function renderRoleplayError() {
   setChrome({ title: "Offline practice is unaffected.", context: "Provider error", progress: 0.7 });
   setActions(
     { label: "Offline mission", onClick: showMissionChooser },
-    { label: "Try again", onClick: () => show("roleplay-compose", { scenarioId: screen.data.scenarioId }) }
+    { label: /access token|401/i.test(screen.data.message) ? "Change token" : "Try again", onClick: () => /access token|401/i.test(screen.data.message)
+      ? show("roleplay-auth")
+      : show("roleplay-compose", { scenarioId: screen.data.scenarioId }) }
   );
 }
 
@@ -2105,6 +2268,83 @@ function renderProgressError() {
   setActions({ label: "Home", onClick: () => show("home") }, { label: "Try another", onClick: () => dom.progressImport.click() });
 }
 
+function renderOverlayHome() {
+  const installed = overlayStatus.installed;
+  screenHeading("PRIVATE LESSON OVERLAY", installed ? "Personal content is installed." : "Public curriculum only.", overlayStatus.error
+    ? `The saved overlay could not be loaded: ${overlayStatus.error}`
+    : "A private overlay stays in this browser and is separate from progress backups and the deployed public seed.");
+  setChrome({ title: "Keep identifying content local.", context: installed ? "Private overlay · installed" : "Private overlay · none", progress: 0.5 });
+  setActions(
+    { label: installed ? "Remove" : "Back", onClick: installed ? confirmClearPrivateOverlay : () => show("tools", { index: 0 }) },
+    { label: installed ? "Replace" : "Import", onClick: () => dom.contentImport.click() }
+  );
+}
+
+async function previewPrivateOverlayFile(file) {
+  if (!file) return;
+  try {
+    const raw = await file.text();
+    const overlay = parsePrivateOverlay(raw);
+    const merged = mergeContentOverlay(basePacks, overlay);
+    const mergedTree = augmentTreeWithReadings(merged.tree, merged.readings);
+    validateSkillGraph(mergedTree);
+    validateMissionPack(merged.missionPack, merged.content, mergedTree);
+    flattenItems(merged.content, merged.readings);
+    overlayDraft = { overlay, fileName: file.name };
+    show("overlay-preview");
+  } catch (error) {
+    show("overlay-error", { message: error.message });
+  } finally {
+    dom.contentImport.value = "";
+  }
+}
+
+function renderOverlayError() {
+  screenHeading("OVERLAY NOT INSTALLED", "That private content was rejected.", screen.data.message);
+  setChrome({ title: "Public curriculum is unchanged.", context: "Private overlay", progress: 0.5 });
+  setActions(
+    { label: "Back", onClick: () => show("overlay-home") },
+    { label: "Try another", onClick: () => dom.contentImport.click() }
+  );
+}
+
+function renderOverlayPreview() {
+  if (!overlayDraft) return show("overlay-home");
+  const overlay = overlayDraft.overlay;
+  const additions = (overlay.scenarios?.length ?? 0)
+    + (overlay.readings?.length ?? 0)
+    + (overlay.skills?.length ?? 0)
+    + (overlay.missions?.length ?? 0);
+  screenHeading("PRIVATE OVERLAY PREVIEW", "Install this local content?", "The public files stay unchanged. Reloading after installation recompiles the local curriculum and preserves matching skill IDs.");
+  setChrome({ title: overlayDraft.fileName, context: `${additions} content records · local only`, progress: 0.8 });
+  addMeta(
+    overlay.placeholders?.nameKatakana ? "personal name override" : null,
+    `${overlay.scenarios?.length ?? 0} scenarios`,
+    `${overlay.readings?.length ?? 0} readings`,
+    `${overlay.missions?.length ?? 0} missions`
+  );
+  setActions(
+    { label: "Cancel", onClick: () => { overlayDraft = null; show("overlay-home"); } },
+    { label: "Install", onClick: applyPrivateOverlay }
+  );
+}
+
+function applyPrivateOverlay() {
+  if (!overlayDraft) return show("overlay-home");
+  savePrivateOverlay(overlayDraft.overlay);
+  location.reload();
+}
+
+function confirmClearPrivateOverlay() {
+  show("confirm", {
+    kicker: "REMOVE PRIVATE OVERLAY",
+    title: "Return to the public curriculum?",
+    copy: "Progress for removed skill IDs is preserved as orphaned evidence and can return if the overlay is installed again.",
+    no: () => show("overlay-home"),
+    yes: () => { clearPrivateOverlay(); location.reload(); }
+  });
+}
+
 function skillLabel(skillId) {
   return tree.nodes.find((node) => node.id === skillId)?.label ?? skillId;
 }
@@ -2137,6 +2377,7 @@ function render() {
     case "map-island": return renderMapIsland();
     case "map-skill": return renderMapSkill();
     case "roleplay-unavailable": return renderRoleplayUnavailable();
+    case "roleplay-auth": return renderRoleplayAuth();
     case "roleplay-line": return renderRoleplayLine();
     case "roleplay-compose": return renderRoleplayCompose();
     case "roleplay-wait": return renderRoleplayWait();
@@ -2147,6 +2388,9 @@ function render() {
     case "passport-export": return renderPassportExport();
     case "passport-import": return renderPassportImport();
     case "progress-error": return renderProgressError();
+    case "overlay-home": return renderOverlayHome();
+    case "overlay-preview": return renderOverlayPreview();
+    case "overlay-error": return renderOverlayError();
     case "confirm": return renderConfirm();
     default: return show("home");
   }
@@ -2172,13 +2416,24 @@ function updateNetworkBadge() {
 
 async function start() {
   try {
-    [content, tree, readings, missionPack] = await Promise.all([
+    const [baseContent, baseTree, baseReadings, baseMissionPack] = await Promise.all([
       fetch("./data/scenarios.json").then((response) => response.json()),
       fetch("./data/tree.json").then((response) => response.json()),
       fetch("./data/readings.json").then((response) => response.json()),
       fetch("./data/missions.json").then((response) => response.json())
     ]);
+    basePacks = { content: baseContent, tree: baseTree, readings: baseReadings, missionPack: baseMissionPack };
+    let privateOverlay = null;
+    try {
+      privateOverlay = loadPrivateOverlay();
+      overlayStatus = { installed: Boolean(privateOverlay), error: null };
+    } catch (error) {
+      console.warn("Kaiwa ignored an invalid private overlay.", error);
+      overlayStatus = { installed: false, error: error.message };
+    }
+    ({ content, tree, readings, missionPack } = mergeContentOverlay(basePacks, privateOverlay));
     tree = augmentTreeWithReadings(tree, readings);
+    validateSkillGraph(tree);
     validateMissionPack(missionPack, content, tree);
     missionLines = missionLineIndex(content);
     items = flattenItems(content, readings);
@@ -2189,6 +2444,7 @@ async function start() {
     dom.placeholder.textContent = `${name.value} is an unconfirmed placeholder. Replace it with the exact reservation name.`;
     dom.placeholder.hidden = name.confirmed;
     dom.progressImport.addEventListener("change", () => restoreProgressFile(dom.progressImport.files?.[0]));
+    dom.contentImport.addEventListener("change", () => previewPrivateOverlayFile(dom.contentImport.files?.[0]));
     window.addEventListener("online", updateNetworkBadge);
     window.addEventListener("offline", updateNetworkBadge);
     updateNetworkBadge();

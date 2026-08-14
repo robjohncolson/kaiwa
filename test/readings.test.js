@@ -8,6 +8,7 @@ import {
   createReadingCharacterItems,
   createReadingItems,
   createWordFacetItems,
+  generatedOptionsForAttempt,
   itemTestsReading,
   kanjiCharacters,
   readingCharacterSkillId,
@@ -17,9 +18,10 @@ import {
   wordFormSkillId,
   wordMeaningSkillId,
   wordRecallSkillId,
+  validateOptionSet,
   uncoveredKanji
 } from "../src/readings.js";
-import { applyObservation } from "../src/scheduler.js";
+import { applyObservation, recordAssistedObservation } from "../src/scheduler.js";
 import { createInitialState } from "../src/store.js";
 
 async function readJson(path) {
@@ -217,23 +219,28 @@ test("reading BKT retires furigana after evidence and restores it after a hint",
 
   assert.ok(probabilityKnown(state.skills[item.skillId]) < readings.furiganaThreshold);
   state = applyObservation(state, item, true, 100);
-  state = applyObservation(state, item, true, 101);
+  state = applyObservation(state, item, true, 100 + 12 * 60 * 60 * 1000);
   assert.ok(probabilityKnown(state.skills[item.skillId]) >= readings.furiganaThreshold);
   assert.equal(state.skills[item.skillId].readingCheckpointStreak, 2);
   assert.equal(readingIsReady(readings, state.skills[item.skillId]), true);
 
-  state = applyObservation(state, item, false, 102, { source: "hint" });
-  assert.ok(probabilityKnown(state.skills[item.skillId]) < readings.furiganaThreshold);
+  const beforeHint = probabilityKnown(state.skills[item.skillId]);
+  state = recordAssistedObservation(state, item, 100 + 12 * 60 * 60 * 1000 + 1, { source: "hint" });
+  assert.equal(probabilityKnown(state.skills[item.skillId]), beforeHint);
   assert.equal(state.skills[item.skillId].readingCheckpointStreak, 0);
   assert.equal(readingIsReady(readings, state.skills[item.skillId]), false);
-  assert.equal(state.skills[item.skillId].observations.hint.incorrect, 1);
+  assert.equal(state.skills[item.skillId].observations.hint.assisted, 1);
 });
 
 test("BKT confidence alone cannot retire furigana without consecutive no-furigana passes", async () => {
   const readings = await readJson("../data/readings.json");
   const skill = {
     pKnown: 0.95,
-    readingCheckpointStreak: 1
+    readingCheckpointStreak: 1,
+    observations: { card: { correct: 2, incorrect: 0 } },
+    lastSpacedCardCorrectAt: 100,
+    lastCardObservedAt: 100,
+    lastCardOutcome: "correct"
   };
 
   assert.equal(readingIsReady(readings, skill), false);
@@ -258,4 +265,25 @@ test("verified Miyazaki corrections are encoded and suspect localities are exclu
   assert.equal(byTerm.has("上妻"), false);
   assert.equal(byTerm.has("上の山町"), false);
   assert.ok(sourcedTerms.every((term) => readings.entries.find((entry) => entry.term === term)?.sourceUrl?.startsWith("https://www.post.japanpost.jp/")));
+});
+
+test("every generated card has one distinct answer and rotates reusable distractors", async () => {
+  const [content, readings] = await Promise.all([
+    readJson("../data/scenarios.json"),
+    readJson("../data/readings.json")
+  ]);
+  const cards = [
+    ...createReadingItems(readings, content),
+    ...createWordFacetItems(readings, content),
+    ...createReadingCharacterItems(readings, content)
+  ];
+  for (const card of cards) validateOptionSet(card.options, card.id);
+  const recall = cards.find((card) => card.id === "word-recall-card.henkin");
+  const first = new Set(generatedOptionsForAttempt(recall, readings, 0).map((option) => option.label));
+  const second = new Set(generatedOptionsForAttempt(recall, readings, 1).map((option) => option.label));
+  assert.notDeepEqual(first, second);
+
+  const invalidReadings = structuredClone(readings);
+  invalidReadings.entries[0].distractors = [invalidReadings.entries[0].reading, "べつ"];
+  assert.throws(() => createReadingItems(invalidReadings, content), /distinct from the answer/);
 });

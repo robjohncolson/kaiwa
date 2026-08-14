@@ -1,4 +1,5 @@
 import { ABORT_TARGET_MS, PRODUCTION_GRADES } from "./production.js";
+import { shuffleCandidates } from "./wizard.js";
 
 export function missionLineIndex(content) {
   const lines = new Map();
@@ -66,7 +67,11 @@ export function validateMissionPack(pack, content, tree) {
   return true;
 }
 
-export function createMissionRun(mission, now = Date.now(), { hideFurigana = false, mode = "recognition" } = {}) {
+export function createMissionRun(mission, now = Date.now(), {
+  hideFurigana = false,
+  mode = "recognition",
+  random = Math.random
+} = {}) {
   if (!new Set(["recognition", "production"]).has(mode)) throw new TypeError("Unknown mission mode.");
   return {
     missionId: mission.id,
@@ -76,6 +81,12 @@ export function createMissionRun(mission, now = Date.now(), { hideFurigana = fal
     stepIndex: 0,
     hideFurigana: Boolean(hideFurigana),
     mode,
+    choiceOrders: Object.fromEntries(mission.steps.map((step) => [
+      step.id,
+      shuffleCandidates(step.choiceSkillIds, random)
+    ])),
+    recognitionOptionIndex: 0,
+    recognitionRejectedCorrect: false,
     currentHintUsed: false,
     hints: 0,
     awaitingAdvance: false,
@@ -88,6 +99,32 @@ export function createMissionRun(mission, now = Date.now(), { hideFurigana = fal
   };
 }
 
+export function missionChoiceSkillIds(run, step) {
+  const choices = run?.choiceOrders?.[step.id];
+  return Array.isArray(choices)
+    && choices.length === step.choiceSkillIds.length
+    && choices.every((skillId) => step.choiceSkillIds.includes(skillId))
+    ? choices
+    : step.choiceSkillIds;
+}
+
+export function ensureMissionChoiceOrders(run, mission, random = Math.random) {
+  if (!run || run.mode !== "recognition") return run;
+  const complete = mission.steps.every((step) => {
+    const choices = run.choiceOrders?.[step.id];
+    return Array.isArray(choices)
+      && choices.length === step.choiceSkillIds.length
+      && choices.every((skillId) => step.choiceSkillIds.includes(skillId));
+  });
+  return complete ? run : {
+    ...run,
+    choiceOrders: Object.fromEntries(mission.steps.map((step) => [
+      step.id,
+      shuffleCandidates(step.choiceSkillIds, random)
+    ]))
+  };
+}
+
 export function revealMissionHint(run) {
   if (run.completed || run.awaitingAdvance || run.currentHintUsed) return run;
   return { ...run, currentHintUsed: true, hints: run.hints + 1 };
@@ -97,7 +134,9 @@ export function answerMissionStep(run, mission, selectedSkillId, now = Date.now(
   if (run.mode !== "recognition") throw new TypeError("Production missions do not accept recognition choices.");
   if (run.completed || run.awaitingAdvance) throw new TypeError("Mission step is not accepting an answer.");
   const step = mission.steps[run.stepIndex];
-  if (!step?.choiceSkillIds.includes(selectedSkillId)) throw new TypeError("Mission answer is not a fixed choice.");
+  if (!step || (selectedSkillId !== null && !step.choiceSkillIds.includes(selectedSkillId))) {
+    throw new TypeError("Mission answer is not a fixed choice.");
+  }
   const answerCorrect = selectedSkillId === step.targetSkillId;
   const observation = {
     stepId: step.id,
@@ -159,7 +198,9 @@ export function advanceMissionRun(run, mission, now = Date.now()) {
       currentHintUsed: false,
       awaitingAdvance: false,
       productionRevealed: false,
-      productionResponseMs: null
+      productionResponseMs: null,
+      recognitionOptionIndex: 0,
+      recognitionRejectedCorrect: false
     };
   }
 

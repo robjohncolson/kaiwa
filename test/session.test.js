@@ -74,6 +74,10 @@ test("session summary reports independent facet readiness and furigana retiremen
   const readingId = session.readingSkillIds[0];
   state.skills[readingId].pKnown = 0.9;
   state.skills[readingId].readingCheckpointStreak = 2;
+  state.skills[readingId].observations.card.correct = 2;
+  state.skills[readingId].lastSpacedCardCorrectAt = NOW;
+  state.skills[readingId].lastCardObservedAt = NOW;
+  state.skills[readingId].lastCardOutcome = "correct";
   assert.equal(readingIsReady(readings, state.skills[readingId]), true);
   session = completeGuidedSession(session, {
     completed: true,

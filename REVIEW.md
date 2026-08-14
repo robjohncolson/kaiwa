@@ -6,7 +6,7 @@ Keep the product idea: a small, closed-loop trip drill with a local scheduler an
 
 1. **Hybrid local brain / routed mouth is correct for this machine.** Cards, state, scheduling, and grading rules are tiny and should remain offline. A local Japanese chat model on 8 GB RAM and four CPU cores would add installation and latency risk for worse roleplay. If fluid practice proves valuable, use an optional OpenAI-compatible HTTP provider. It must return observations only; local code owns mastery and accepts a safe fallback when JSON is invalid.
 
-2. **v1 should schedule only the cram clock.** Two active clocks create product decisions that cannot yet be validated: how same-day success transfers to long retention, what “graduation” means, and which clock wins. Keep a nullable `longDue` field so state can evolve without migration pain, but do not let it affect selection. Use a short ladder (2m, 10m, 30m, 2h) and optimize for the next event.
+2. **v1 should schedule only the cram clock.** Two active clocks create product decisions that cannot yet be validated: how same-day success transfers to long retention, what “graduation” means, and which clock wins. Keep a nullable `longDue` field so state can evolve without migration pain, but do not let it affect selection. The later Honest Evidence release conservatively extended the same ladder to 1d and 3d without adding a second scheduler.
 
 3. **Fitted BKT is overkill; fixed-parameter BKT is now defensible.** The original self-grades could not identify guess, slip, and transition probabilities. The revised Japanese-first three-choice cards produce objective hits and misses, so a deliberately small BKT update is useful for prerequisite gating. Keep one reviewed parameter set, expose it as an estimate rather than truth, and do not fit per-skill parameters from this tiny dataset.
 
@@ -24,7 +24,7 @@ Keep the product idea: a small, closed-loop trip drill with a local scheduler an
 
 ## Keep, change, cut
 
-Keep closed scenarios, Japanese-first recognition, a globally available abort, the small prerequisite DAG, local persistence, and route urgency. Use fixed-parameter BKT only for observed choices, keep the abort skill ungated, and keep `longDue` inactive. `コルソン` is now user-confirmed; keep it in content data rather than UI logic.
+Keep closed scenarios, Japanese-first recognition, a globally available abort, the small prerequisite DAG, local persistence, and route urgency. Use fixed-parameter BKT only for observed choices, keep the abort skill ungated, and keep `longDue` inactive. Exact identity belongs in a browser-local private overlay rather than the public seed.
 
 Do **not** build local models, speech recognition, TTS/audio caching, Anki import/export or sync, FSRS/SM-2, fitted BKT parameters, automatic mastery propagation, live navigation, a general JLPT tree, accounts/cloud sync, or private trip data. The added navigation cards teach labels and reading traps; they are not a route planner.
 

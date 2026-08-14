@@ -37,6 +37,7 @@ test("production evidence never changes BKT or DAG unlocking", () => {
   assert.equal(updated.skills["abort.wakarimasen"].correct, 0);
   assert.equal(updated.totalReviews, 0);
   assert.equal(updated.totalProduction, 1);
+  assert.equal(updated.skills["abort.wakarimasen"].lastExposureAt, NOW + 1);
   assert.equal(skillIsReady(tree, updated.skills["abort.wakarimasen"]), false);
   assert.equal(isSkillUnlocked(tree, updated.skills, "child"), false);
 });

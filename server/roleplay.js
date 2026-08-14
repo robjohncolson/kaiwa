@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readRoleplayAccessToken } from "./security.js";
 
 const OUTCOMES = Object.freeze(["success", "partial", "miss", "not_tested"]);
 
@@ -92,8 +93,9 @@ export function readProviderConfig(env = process.env) {
 export function roleplayStatus(env = process.env) {
   try {
     const config = readProviderConfig(env);
+    if (config) readRoleplayAccessToken(env);
     return config
-      ? { available: true, model: config.model }
+      ? { available: true, model: config.model, authRequired: true }
       : { available: false, reason: "Provider environment variables are not set." };
   } catch (error) {
     return { available: false, reason: error.message };

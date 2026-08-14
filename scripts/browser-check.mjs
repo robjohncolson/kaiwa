@@ -255,15 +255,24 @@ async function run() {
         window.__kaiwaItemIndex = Promise.all([
           fetch("./data/scenarios.json").then(response => response.json()),
           fetch("./data/readings.json").then(response => response.json()),
-          import("./src/scheduler.js")
-        ]).then(([content, readings, scheduler]) => scheduler.flattenItems(content, readings));
+          import("./src/scheduler.js"),
+          import("./src/readings.js")
+        ]).then(([content, readings, scheduler, readingTools]) => ({
+          items: scheduler.flattenItems(content, readings),
+          readings,
+          readingTools
+        }));
       }
       const itemId = document.querySelector("#wizard-screen")?.dataset.itemId;
       const optionId = document.querySelector(".candidate-card")?.dataset.optionId;
       const saved = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || "null");
       const dynamic = saved?.repair?.active?.recognitionCard;
-      const item = dynamic?.id === itemId ? dynamic : (await window.__kaiwaItemIndex).find(candidate => candidate.id === itemId);
-      return item?.options?.find(option => option.id === optionId)?.correct ?? null;
+      const index = await window.__kaiwaItemIndex;
+      const item = dynamic?.id === itemId ? dynamic : index.items.find(candidate => candidate.id === itemId);
+      const options = item?.wordId
+        ? index.readingTools.generatedOptionsForAttempt(item, index.readings, saved?.skills?.[item.skillId]?.attempts ?? 0)
+        : item?.options;
+      return options?.find(option => option.id === optionId)?.correct ?? null;
     })()`);
     const answerCard = async (correct) => {
       for (let candidate = 0; candidate < 4; candidate += 1) {
@@ -450,18 +459,18 @@ async function run() {
     check(await title() === "Put it back together.", "clean components lead to the integration phase");
     await click("Retry whole card");
     await answerCard(true);
-    check(await actionLabel("Schedule revisit"), "a clean immediate retry schedules delayed reconsolidation");
-    await click("Schedule revisit");
-    check(await title() === "Let it settle.", "the breakdown enters a real ten-minute gap");
-    check(await actionLabel("Not ready"), "the delayed whole-card check cannot run immediately");
+    check(await actionLabel("Continue practice"), "a clean immediate rebuild releases the learner back to practice");
+    const afterImmediateRebuild = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); return { attempts: state.skills["geo.miyazaki_address"].attempts, rebuild: state.skills["geo.miyazaki_address"].rebuild, scheduled: state.breakdown.scheduled.length }; })()`);
+    check(afterImmediateRebuild.rebuild.correct >= 1, "the immediate whole-card success is recorded only as rebuild evidence");
+    await click("Continue practice");
+    check(await actionLabel("Start practice"), "the ten-minute wait does not block ordinary practice");
+    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.scheduled.length`) === 1, "the delayed check is persisted in the scheduled queue");
     await cdp.send("Page.reload", {}, sessionId);
-    await eventually(async () => actionLabel("Resume breakdown"), "Waiting breakdown did not survive refresh");
-    await click("Resume breakdown");
-    check(await actionLabel("Not ready"), "refresh preserves the not-yet-due breakdown revisit");
-    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.breakdown.active.revisitAt = Date.now() - 1; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await eventually(async () => actionLabel("Start practice"), "Scheduled wait did not return to normal practice after refresh");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.breakdown.scheduled[0].revisitAt = Date.now() - 1; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
     await cdp.send("Page.reload", {}, sessionId);
-    await eventually(async () => actionLabel("Resume breakdown"), "Due breakdown did not load");
-    await click("Resume breakdown");
+    await eventually(async () => actionLabel("Delayed check due"), "Due breakdown did not surface");
+    await click("Delayed check due");
     await click("Start delayed check");
     await answerCard(true);
     check(await actionLabel("Finish breakdown"), "a clean delayed parent recall closes the evidence loop");
@@ -469,7 +478,7 @@ async function run() {
     check(await title() === "Connection held.", "breakdown reaches a delayed-recall summary");
     await layout("390x844 breakdown complete");
     const breakdownEvidence = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); return { parent: state.skills["geo.miyazaki_address"], components: state.breakdown.active.componentSkillIds.map(id => state.skills[id]) }; })()`);
-    check(breakdownEvidence.parent.incorrect >= 1 && breakdownEvidence.parent.correct >= 2, "parent BKT records the miss and its own clean retry");
+    check(breakdownEvidence.parent.incorrect >= 1 && breakdownEvidence.parent.correct >= 1 && breakdownEvidence.parent.rebuild.correct >= 1, "parent separates the miss, non-BKT rebuild, and delayed BKT recall");
     check(breakdownEvidence.components.every(skill => skill.correct >= 1), "each selected component records independent clean evidence");
     await click("Continue");
     check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.recent.length`) >= 1, "completed breakdown is archived locally");
@@ -511,6 +520,33 @@ async function run() {
     check(await title() === "The loop is closed.", "guided session reaches a complete summary");
     await layout("390x844 guided summary");
     await click("Home");
+
+    // Forced misses remain bounded: session cards finish and their breakdowns queue behind the session.
+    await click("View session");
+    await click("Again");
+    for (let card = 0; card < 6; card += 1) {
+      await answerCard(false);
+      const forward = card === 5 ? "Speak next" : "Next card";
+      check(await actionLabel(forward), `forced miss ${card + 1} keeps the guided path moving`);
+      await click(forward);
+    }
+    check(await title() === "Cards complete. Speak now.", "six forced misses still complete the card phase");
+    const queuedBreakdowns = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); return { active: state.breakdown.active, queued: state.breakdown.queued.length }; })()`);
+    check(queuedBreakdowns.active === null && queuedBreakdowns.queued === 6, "session misses queue six repairs without modal preemption");
+    await click("Start mission");
+    await finishProductionMission();
+    await click("Home");
+
+    // Recognition missions hide meanings until feedback and own shuffled candidate order.
+    await navigateTool("Closed-loop mission");
+    await click("Choose");
+    await click("No · choose");
+    await click("No · supported");
+    check(await js(`document.querySelector(".candidate-card .line-meaning") === null`), "mission recognition does not reveal candidate meanings");
+    check(await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); const run = state.mission.active; return Array.isArray(run.choiceOrders) ? false : Object.keys(run.choiceOrders || {}).length > 0; })()`), "mission run persists shuffled candidate orders");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.mission.active = null; state.breakdown.queued = []; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return after mission evidence check");
 
     // Failed field result -> repair -> persisted wait -> due revisit -> completion.
     await navigateTool("Log a real conversation");

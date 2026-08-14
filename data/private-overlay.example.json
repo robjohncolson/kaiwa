@@ -1,0 +1,17 @@
+{
+  "format": "kaiwa-private-overlay",
+  "version": 1,
+  "placeholders": {
+    "nameKatakana": {
+      "value": "ヤマダ",
+      "confirmed": false,
+      "note": "Replace this example with the exact katakana name used for your reservation. Keep the personalized file private."
+    }
+  },
+  "scenarios": [],
+  "readings": [],
+  "skills": [],
+  "edges": [],
+  "decompositions": [],
+  "missions": []
+}

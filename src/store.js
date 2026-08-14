@@ -1,7 +1,10 @@
 import { emptyProductionEvidence } from "./production.js";
 
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
-export const STATE_VERSION = 10;
+export const STATE_VERSION = 11;
+export const BACKUP_FORMAT_VERSION = 2;
+export const MAX_BACKUP_BYTES = 2_000_000;
+const SUPPORTED_STATE_VERSIONS = Object.freeze(Array.from({ length: STATE_VERSION }, (_, index) => index + 1));
 
 function bktDefaults(tree, node) {
   return {
@@ -29,6 +32,14 @@ function newSkillState(tree, node, now) {
     longDue: null,
     lastOutcome: null,
     lastPracticedAt: null,
+    lastExposureAt: null,
+    lastEvidenceSource: null,
+    lastCardObservedAt: null,
+    lastCardOutcome: null,
+    lastSpacedCardCorrectAt: null,
+    lastRoleplaySuccessAt: null,
+    lastAssistedAt: null,
+    rebuild: { attempts: 0, correct: 0, incorrect: 0, lastAt: null },
     readingCheckpointStreak: 0,
     readingCheckpointPasses: 0,
     production: emptyProductionEvidence()
@@ -48,34 +59,40 @@ export function createInitialState(tree, now = Date.now()) {
     mission: { active: null, stats: {} },
     session: { active: null, recent: [] },
     repair: { active: null, recent: [] },
-    breakdown: { active: null, recent: [] },
+    breakdown: { active: null, queued: [], scheduled: [], recent: [] },
     field: { events: [] },
+    orphans: {},
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
   };
 }
 
+function mergeBreakdownSession(session) {
+  return session ? {
+    ...session,
+    diagnosis: { selectedOptionId: null, skillIds: [], ...session.diagnosis },
+    relationships: session.relationships ?? {},
+    skillIdsByItem: session.skillIdsByItem ?? {},
+    selectionEvidence: session.selectionEvidence ?? {},
+    childrenByItem: session.childrenByItem ?? {},
+    parentByItem: session.parentByItem ?? {},
+    depthByItem: session.depthByItem ?? {},
+    nodeLabels: session.nodeLabels ?? {},
+    graphNodeCount: session.graphNodeCount ?? session.componentIds?.length ?? 0,
+    expansionEvents: session.expansionEvents ?? [],
+    round: session.round ?? "integration",
+    integrationPassedAt: session.integrationPassedAt ?? null,
+    revisitAt: session.revisitAt ?? null,
+    revisitOutcome: session.revisitOutcome ?? null
+  } : null;
+}
+
 function mergeBreakdown(savedBreakdown) {
-  const active = savedBreakdown?.active;
   return {
-    active: active ? {
-      ...active,
-      diagnosis: { selectedOptionId: null, skillIds: [], ...active.diagnosis },
-      relationships: active.relationships ?? {},
-      skillIdsByItem: active.skillIdsByItem ?? {},
-      selectionEvidence: active.selectionEvidence ?? {},
-      childrenByItem: active.childrenByItem ?? {},
-      parentByItem: active.parentByItem ?? {},
-      depthByItem: active.depthByItem ?? {},
-      nodeLabels: active.nodeLabels ?? {},
-      graphNodeCount: active.graphNodeCount ?? active.componentIds?.length ?? 0,
-      expansionEvents: active.expansionEvents ?? [],
-      round: active.round ?? "integration",
-      integrationPassedAt: active.integrationPassedAt ?? null,
-      revisitAt: active.revisitAt ?? null,
-      revisitOutcome: active.revisitOutcome ?? null
-    } : null,
+    active: mergeBreakdownSession(savedBreakdown?.active),
+    queued: Array.isArray(savedBreakdown?.queued) ? savedBreakdown.queued.slice(-20).map(mergeBreakdownSession) : [],
+    scheduled: Array.isArray(savedBreakdown?.scheduled) ? savedBreakdown.scheduled.slice(-20).map(mergeBreakdownSession) : [],
     recent: Array.isArray(savedBreakdown?.recent) ? savedBreakdown.recent.slice(-20) : []
   };
 }
@@ -103,7 +120,8 @@ function migrateLegacySkill(savedSkill, initialSkill) {
     lastOutcome: savedSkill.lastGrade === "good"
       ? "correct"
       : savedSkill.lastGrade ? "incorrect" : null,
-    lastPracticedAt: savedSkill.lastPracticedAt ?? null
+    lastPracticedAt: savedSkill.lastPracticedAt ?? null,
+    lastExposureAt: savedSkill.lastPracticedAt ?? null
   };
 }
 
@@ -122,14 +140,34 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
       roleplay: { ...initialSkill.observations.roleplay, ...savedSkill.observations?.roleplay },
       hint: { ...initialSkill.observations.hint, ...savedSkill.observations?.hint }
     },
-    production: { ...initialSkill.production, ...savedSkill.production }
+    production: { ...initialSkill.production, ...savedSkill.production },
+    rebuild: { ...initialSkill.rebuild, ...savedSkill.rebuild }
   };
+}
+
+function orphanSkillState(orphan) {
+  return orphan?.state ?? orphan;
 }
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || !SUPPORTED_STATE_VERSIONS.includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
+  }
+
+  const currentIds = new Set(tree.nodes.map((node) => node.id));
+  const orphans = {};
+  for (const [skillId, orphan] of Object.entries(candidate.orphans ?? {})) {
+    if (!currentIds.has(skillId) && orphanSkillState(orphan)) {
+      orphans[skillId] = orphan?.state
+        ? orphan
+        : { archivedAt: now, state: orphan };
+    }
+  }
+  for (const [skillId, savedSkill] of Object.entries(candidate.skills)) {
+    if (!currentIds.has(skillId)) {
+      orphans[skillId] = { archivedAt: orphans[skillId]?.archivedAt ?? now, state: savedSkill };
+    }
   }
 
   return {
@@ -143,6 +181,8 @@ function mergeWithCurrentTree(candidate, tree, now) {
         mode: "recognition",
         productionRevealed: false,
         productionResponseMs: null,
+        recognitionOptionIndex: 0,
+        recognitionRejectedCorrect: false,
         ...candidate.mission.active
       } : null,
       stats: { ...initial.mission.stats, ...candidate.mission?.stats }
@@ -170,9 +210,14 @@ function mergeWithCurrentTree(candidate, tree, now) {
     field: {
       events: Array.isArray(candidate.field?.events) ? candidate.field.events.slice(-100) : []
     },
+    orphans,
     skills: Object.fromEntries(tree.nodes.map((node) => [
       node.id,
-      mergeSkill(candidate.skills[node.id], initial.skills[node.id], candidate.version)
+      mergeSkill(
+        candidate.skills[node.id] ?? orphanSkillState(candidate.orphans?.[node.id]),
+        initial.skills[node.id],
+        candidate.version
+      )
     ]))
   };
 }
@@ -188,24 +233,50 @@ export function loadState(tree, storage = globalThis.localStorage, now = Date.no
 }
 
 export function saveState(state, storage = globalThis.localStorage) {
-  storage?.setItem(STORAGE_KEY, JSON.stringify(state));
+  storage?.setItem(STORAGE_KEY, JSON.stringify(compactState(state)));
 }
 
 export function clearState(storage = globalThis.localStorage) {
   storage?.removeItem(STORAGE_KEY);
 }
 
+function skillHasProgress(skill) {
+  const observationCount = Object.values(skill?.observations ?? {}).reduce(
+    (total, source) => total + (source?.correct ?? 0) + (source?.incorrect ?? 0) + (source?.assisted ?? 0),
+    0
+  );
+  return (skill?.attempts ?? 0) > 0
+    || (Number.isFinite(skill?.pKnown) && skill.pKnown !== 0.3)
+    || observationCount > 0
+    || (skill?.production?.attempts ?? 0) > 0
+    || (skill?.rebuild?.attempts ?? 0) > 0
+    || (skill?.readingCheckpointPasses ?? 0) > 0
+    || (skill?.readingCheckpointStreak ?? 0) > 0
+    || Number.isFinite(skill?.lastExposureAt)
+    || Number.isFinite(skill?.lastPracticedAt);
+}
+
+export function compactState(state) {
+  return {
+    ...state,
+    skills: Object.fromEntries(
+      Object.entries(state.skills ?? {}).filter(([, skill]) => skillHasProgress(skill))
+    )
+  };
+}
+
 export function createProgressBackup(state, now = Date.now()) {
   return JSON.stringify({
     format: "kaiwa-progress",
-    version: 1,
+    version: BACKUP_FORMAT_VERSION,
     exportedAt: now,
-    state
-  }, null, 2);
+    state: compactState(state)
+  });
 }
 
 export function previewProgressBackup(raw, tree, now = Date.now()) {
-  if (typeof raw !== "string" || raw.length === 0 || raw.length > 2_000_000) {
+  const byteLength = typeof raw === "string" ? new TextEncoder().encode(raw).byteLength : 0;
+  if (typeof raw !== "string" || byteLength === 0 || byteLength > MAX_BACKUP_BYTES) {
     throw new TypeError("Kaiwa backup must be a non-empty JSON file under 2 MB.");
   }
   let envelope;
@@ -214,10 +285,10 @@ export function previewProgressBackup(raw, tree, now = Date.now()) {
   } catch {
     throw new TypeError("This is not valid JSON.");
   }
-  if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
+  if (envelope?.format !== "kaiwa-progress" || ![1, BACKUP_FORMAT_VERSION].includes(envelope.version) || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (!SUPPORTED_STATE_VERSIONS.includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   return {

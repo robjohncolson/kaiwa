@@ -6,6 +6,7 @@ export const MAX_BREAKDOWN_COMPONENTS = 6;
 export const MAX_BREAKDOWN_DEPTH = 4;
 export const MAX_BREAKDOWN_GRAPH_NODES = 64;
 export const BREAKDOWN_REVISIT_MS = 10 * 60 * 1000;
+export const BREAKDOWN_REVISIT_GUESS_PROBABILITY = 0.75;
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -426,9 +427,59 @@ export function archiveCompletedBreakdown(breakdownState) {
   const active = breakdownState?.active;
   if (!active || active.phase !== "complete") return breakdownState;
   return {
+    ...breakdownState,
     active: null,
     recent: [...(breakdownState.recent ?? []), active].slice(-20)
   };
+}
+
+export function queueBreakdown(breakdownState, session) {
+  if (!session) return breakdownState;
+  return {
+    ...breakdownState,
+    queued: [...(breakdownState?.queued ?? []), session].slice(-20)
+  };
+}
+
+export function scheduleWaitingBreakdown(breakdownState) {
+  const active = breakdownState?.active;
+  if (!active || active.phase !== "waiting" || !Number.isFinite(active.revisitAt)) {
+    throw new TypeError("Only a waiting breakdown can be scheduled.");
+  }
+  return {
+    ...breakdownState,
+    active: null,
+    scheduled: [...(breakdownState?.scheduled ?? []), active]
+      .sort((a, b) => a.revisitAt - b.revisitAt)
+      .slice(-20)
+  };
+}
+
+export function breakdownDue(breakdownState, now = Date.now()) {
+  return (breakdownState?.scheduled ?? []).some((session) => session.revisitAt <= now);
+}
+
+export function activateAvailableBreakdown(
+  breakdownState,
+  now = Date.now(),
+  { includeQueued = true } = {}
+) {
+  if (breakdownState?.active) return breakdownState;
+  const scheduled = [...(breakdownState?.scheduled ?? [])];
+  const dueIndex = scheduled.findIndex((session) => session.revisitAt <= now);
+  if (dueIndex >= 0) {
+    const [due] = scheduled.splice(dueIndex, 1);
+    return {
+      ...breakdownState,
+      active: beginBreakdownRevisit(due, now),
+      scheduled
+    };
+  }
+  const queued = [...(breakdownState?.queued ?? [])];
+  if (includeQueued && queued.length > 0) {
+    return { ...breakdownState, active: queued.shift(), queued };
+  }
+  return breakdownState;
 }
 
 export function abandonBreakdown(breakdownState, now = Date.now()) {
@@ -436,6 +487,7 @@ export function abandonBreakdown(breakdownState, now = Date.now()) {
   if (!active) return breakdownState;
   const abandoned = { ...active, phase: "abandoned", completedAt: now, updatedAt: now };
   return {
+    ...breakdownState,
     active: null,
     recent: [...(breakdownState.recent ?? []), abandoned].slice(-20)
   };

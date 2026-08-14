@@ -39,7 +39,7 @@ test("map statuses and practice targets follow the real prerequisite rule", () =
     id: "root-card-again",
     skillId: "root",
     options: [{ correct: true }, { correct: false }, { correct: false }]
-  }, true, NOW + 1);
+  }, true, NOW + 12 * 60 * 60 * 1000);
   assert.equal(mapSkillStatus(tree, confirmed, "root"), "ready");
   assert.equal(mapSkillStatus(tree, confirmed, "child"), "unseen");
   assert.equal(practiceTargetFor(tree, confirmed, "child"), "child");

@@ -33,7 +33,7 @@ const items = [
   { id: "c-child", skillId: "child", scenarioId: "normal", options }
 ];
 
-test("a prerequisite needs BKT confidence and two correct observations", () => {
+test("a prerequisite needs BKT confidence, two card successes, and spaced recall", () => {
   const initial = createInitialState(tree, NOW);
   assert.equal(isSkillUnlocked(tree, initial.skills, "child"), false);
 
@@ -41,8 +41,18 @@ test("a prerequisite needs BKT confidence and two correct observations", () => {
   assert.ok(probabilityKnown(once.skills.root) > tree.readyThreshold);
   assert.equal(isSkillUnlocked(tree, once.skills, "child"), false);
 
-  const twice = applyObservation(once, items[0], true, NOW + 1);
+  const twice = applyObservation(once, items[0], true, NOW + 12 * 60 * 60 * 1000);
   assert.equal(isSkillUnlocked(tree, twice.skills, "child"), true);
+});
+
+test("the cram ladder reaches one-day and three-day reviews", () => {
+  let state = createInitialState(tree, NOW);
+  const expected = [2, 10, 30, 120, 24 * 60, 3 * 24 * 60].map((minutes) => minutes * 60 * 1000);
+  for (const interval of expected) {
+    const at = state.skills.root.cramDue;
+    state = applyObservation(state, items[0], true, at);
+    assert.equal(state.skills.root.cramDue, at + interval);
+  }
 });
 
 test("answering a card changes the next selection", () => {

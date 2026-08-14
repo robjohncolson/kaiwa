@@ -7,6 +7,7 @@ import {
   answerMissionStep,
   createMissionRun,
   gradeProductionStep,
+  missionChoiceSkillIds,
   missionById,
   missionLineIndex,
   recordMissionCompletion,
@@ -14,7 +15,7 @@ import {
   revealMissionHint,
   validateMissionPack
 } from "../src/mission.js";
-import { applyObservation } from "../src/scheduler.js";
+import { applyObservation, recordAssistedObservation } from "../src/scheduler.js";
 import { createInitialState } from "../src/store.js";
 
 const NOW = 1_700_000_000_000;
@@ -86,22 +87,24 @@ test("an unaided fixed-line run completes cleanly and records local metrics", as
   assert.equal(missionState.active, null);
 });
 
-test("a hinted success is a BKT miss but a correct final abort still recovers", async () => {
+test("a hinted success is neutral evidence and a correct final abort still recovers", async () => {
   const { pack, tree } = await fixtures();
   const mission = missionById(pack, "hotel-refund-loop");
   const run = finishMission(mission, { hintAt: 0 });
   const observation = run.observations[0];
-  const state = applyObservation(createInitialState(tree, NOW), {
+  const state = recordAssistedObservation(createInitialState(tree, NOW), {
     id: `mission.${mission.id}.${observation.stepId}`,
     skillId: observation.skillId,
     options: mission.steps[0].choiceSkillIds.map((skillId) => ({ id: skillId }))
-  }, observation.evidenceCorrect, observation.observedAt, { source: "mission" });
+  }, observation.observedAt, { source: "hint" });
 
   assert.equal(run.outcome, "recovered");
   assert.equal(run.observations[0].answerCorrect, true);
   assert.equal(run.observations[0].evidenceCorrect, false);
   assert.equal(run.hints, 1);
-  assert.deepEqual(state.skills[observation.skillId].observations.mission, { correct: 0, incorrect: 1 });
+  assert.equal(state.skills[observation.skillId].attempts, 0);
+  assert.deepEqual(state.skills[observation.skillId].observations.mission, { correct: 0, incorrect: 0 });
+  assert.equal(state.skills[observation.skillId].observations.hint.assisted, 1);
 });
 
 test("missing the final abort fails the mission", async () => {
@@ -163,4 +166,30 @@ test("production help cannot be called clean and a slow abort only recovers", as
     gradeAt: mission.steps.length - 1,
     grade: "miss"
   }).outcome, "failed");
+});
+
+test("recognition choices shuffle uniformly and rejecting all records no invented selection", async () => {
+  const { pack } = await fixtures();
+  const mission = missionById(pack, "shimamura-loop");
+  const counts = [0, 0, 0];
+  let seed = 0x9e3779b9;
+  const random = () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4_294_967_296;
+  };
+  for (let sample = 0; sample < 1_000; sample += 1) {
+    const run = createMissionRun(mission, NOW + sample, { random });
+    const step = mission.steps[0];
+    counts[missionChoiceSkillIds(run, step).indexOf(step.targetSkillId)] += 1;
+  }
+  const expected = 1_000 / 3;
+  const chiSquared = counts.reduce((sum, count) => sum + ((count - expected) ** 2) / expected, 0);
+  assert.ok(chiSquared < 13.82, `target positions were not uniform: ${counts.join(", ")}`);
+
+  let run = createMissionRun(mission, NOW, { random: () => 0.5 });
+  run = answerMissionStep(run, mission, null, NOW + 1);
+  assert.equal(run.observations[0].selectedSkillId, null);
+  assert.equal(run.observations[0].answerCorrect, false);
 });

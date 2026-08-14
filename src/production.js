@@ -51,7 +51,12 @@ export function applyProductionObservation(state, observation) {
     updatedAt: observation.observedAt,
     skills: {
       ...state.skills,
-      [observation.skillId]: { ...skill, production }
+      [observation.skillId]: {
+        ...skill,
+        production,
+        lastExposureAt: observation.observedAt,
+        ...(observation.grade === "help" ? { lastAssistedAt: observation.observedAt } : {})
+      }
     }
   };
 }

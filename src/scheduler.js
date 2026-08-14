@@ -1,12 +1,19 @@
 import { observeBkt, probabilityKnown, skillIsReady } from "./mastery.js";
-import { createReadingCharacterItems, createReadingItems, createWordFacetItems } from "./readings.js";
+import {
+  createReadingCharacterItems,
+  createReadingItems,
+  createWordFacetItems,
+  validateOptionSet
+} from "./readings.js";
 import { fieldMultiplier } from "./field.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
   2 * 60 * 1000,
   10 * 60 * 1000,
   30 * 60 * 1000,
-  2 * 60 * 60 * 1000
+  2 * 60 * 60 * 1000,
+  24 * 60 * 60 * 1000,
+  3 * 24 * 60 * 60 * 1000
 ]);
 
 export function flattenItems(contentPack, readings = null) {
@@ -18,7 +25,7 @@ export function flattenItems(contentPack, readings = null) {
       scenarioPurpose: scenario.purpose
     }))
   );
-  return readings
+  const items = readings
     ? [
       ...scenarioItems,
       ...createReadingItems(readings, contentPack),
@@ -26,6 +33,8 @@ export function flattenItems(contentPack, readings = null) {
       ...createReadingCharacterItems(readings, contentPack)
     ]
     : scenarioItems;
+  for (const item of items) validateOptionSet(item.options, item.id);
+  return items;
 }
 
 export function prerequisitesFor(tree, skillId) {
@@ -131,7 +140,9 @@ export function applyObservation(
   const observed = observeBkt(currentSkill, correct, now, {
     source,
     guessProbability: guessProbability
-      ?? (["card", "mission"].includes(source) && optionCount > 1 ? 1 / optionCount : 0.05)
+      ?? (["card", "mission"].includes(source) && optionCount > 1
+        ? 1 / optionCount
+        : source === "roleplay" ? 1 / 3 : 0.05)
   });
   const isReadingCheckpoint = item.mode === "reading" && ["card", "hint"].includes(source);
   const checkpoint = isReadingCheckpoint ? {
@@ -159,4 +170,56 @@ export function applyObservation(
     totalReviews: state.totalReviews + 1,
     updatedAt: now
   };
+}
+
+function recordWithoutBkt(state, item, now, updateSkill) {
+  const currentSkill = state.skills[item.skillId];
+  if (!currentSkill) throw new TypeError(`Missing skill state: ${item.skillId}`);
+  return {
+    ...state,
+    skills: {
+      ...state.skills,
+      [item.skillId]: updateSkill(currentSkill)
+    },
+    lastItemId: item.id,
+    updatedAt: now
+  };
+}
+
+export function recordAssistedObservation(
+  state,
+  item,
+  now = Date.now(),
+  { source = "hint" } = {}
+) {
+  if (!new Set(["hint", "roleplay"]).has(source)) {
+    throw new TypeError(`Unsupported assisted evidence source: ${source}`);
+  }
+  return recordWithoutBkt(state, item, now, (currentSkill) => {
+    const sourceState = currentSkill.observations?.[source] ?? { correct: 0, incorrect: 0 };
+    return {
+      ...currentSkill,
+      observations: {
+        ...currentSkill.observations,
+        [source]: { ...sourceState, assisted: (sourceState.assisted ?? 0) + 1 }
+      },
+      lastExposureAt: now,
+      lastAssistedAt: now,
+      ...(item.mode === "reading" ? { readingCheckpointStreak: 0 } : {})
+    };
+  });
+}
+
+export function recordRebuildObservation(state, item, correct, now = Date.now()) {
+  if (typeof correct !== "boolean") throw new TypeError("A rebuild must be correct or incorrect.");
+  return recordWithoutBkt(state, item, now, (currentSkill) => ({
+    ...currentSkill,
+    rebuild: {
+      attempts: (currentSkill.rebuild?.attempts ?? 0) + 1,
+      correct: (currentSkill.rebuild?.correct ?? 0) + (correct ? 1 : 0),
+      incorrect: (currentSkill.rebuild?.incorrect ?? 0) + (correct ? 0 : 1),
+      lastAt: now
+    },
+    lastExposureAt: now
+  }));
 }
