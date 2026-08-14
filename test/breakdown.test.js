@@ -58,7 +58,7 @@ test("a missed composite card decomposes through the DAG and contextual readings
   ]));
 });
 
-test("BKT weakness outranks already-strong prerequisite nodes", async () => {
+test("a weak word facet outranks already-strong prerequisite nodes", async () => {
   const { tree, readings, items, state } = await fixtures();
   const source = items.find((item) => item.id === "shimamura.pickup.meaning");
   state.skills["vocab.toriyose"].pKnown = 0.9;
@@ -67,7 +67,7 @@ test("BKT weakness outranks already-strong prerequisite nodes", async () => {
   const selected = breakdownComponents({ item: source, items, tree, readings, state, limit: 1 });
 
   assert.equal(selected.componentIds.length, 1);
-  assert.equal(selected.relationships[selected.componentIds[0]], "reading");
+  assert.equal(selected.relationships[selected.componentIds[0]], "meaning");
 });
 
 test("component misses repeat until clean before the whole-card retry", async () => {
@@ -230,14 +230,47 @@ test("a missed word inside a phrase expands recursively before rebuilding the wo
   assert.equal(currentBreakdownCard(session, items, source).id, word.id);
 });
 
+test("meaning recall descends through word facets and then kanji only when needed", async () => {
+  const { tree, readings, items, state } = await fixtures();
+  const source = items.find((item) => item.id === "word-recall-card.minashiro");
+  let session = buildBreakdownSession({ item: source, items, tree, readings, state, now: NOW });
+
+  assert.ok(["reading.minashiro", "word-form.minashiro", "word-meaning.minashiro"]
+    .every((skillId) => session.componentSkillIds.includes(skillId)));
+  while (currentBreakdownCard(session, items, source).id !== "word-form-card.minashiro") {
+    const component = currentBreakdownCard(session, items, source);
+    session = recordBreakdownComponent(session, component, true, session.updatedAt + 1);
+  }
+
+  const form = currentBreakdownCard(session, items, source);
+  session = recordBreakdownComponent(session, form, false, session.updatedAt + 1);
+  const characterIds = [
+    "reading-character-card.minashiro.0",
+    "reading-character-card.minashiro.1",
+    "reading-character-card.minashiro.2"
+  ];
+  assert.ok(characterIds.every((id) => session.expansionEvents.at(-1).childItemIds.includes(id)));
+  assert.ok(characterIds.every((id) => session.componentIds.includes(id)));
+  assert.ok(session.queue.slice(session.queueIndex, session.queueIndex + 4).includes("reading-card.minashiro"));
+  assert.ok(session.queue.indexOf(form.id, session.queueIndex) > session.queueIndex);
+});
+
 test("every card is decomposable or declares an honest atomic leaf", async () => {
   const { tree, readings, items, state } = await fixtures();
   for (const item of items) {
-    const components = breakdownComponents({ item, items, tree, readings, state });
+    const session = buildBreakdownSession({ item, items, tree, readings, state, now: NOW });
     assert.ok(
-      components.candidateCount > 0 || item.breakdownLeaf === true,
+      session.candidateCount > 0 || item.breakdownLeaf === true,
       `${item.id} has neither component nodes nor an explicit atomic-leaf declaration`
     );
+    assert.ok(session.graphNodeCount <= MAX_BREAKDOWN_GRAPH_NODES, `${item.id} exceeds the recursive graph cap`);
+    assert.ok(Math.max(0, ...Object.values(session.depthByItem)) <= MAX_BREAKDOWN_DEPTH, `${item.id} exceeds the recursive depth cap`);
+    const visit = (id, path = new Set()) => {
+      assert.ok(!path.has(id), `${item.id} recursive graph cycles through ${id}`);
+      const nextPath = new Set([...path, id]);
+      for (const childId of session.childrenByItem[id] ?? []) visit(childId, nextPath);
+    };
+    for (const rootId of [...session.componentIds, ...session.deferredIds]) visit(rootId, new Set([item.id]));
   }
 });
 

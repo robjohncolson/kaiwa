@@ -1,6 +1,12 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import { fieldMultiplier } from "./field.js";
-import { readingIsReady, readingSkillId } from "./readings.js";
+import {
+  readingIsReady,
+  readingSkillId,
+  wordFormSkillId,
+  wordMeaningSkillId,
+  wordRecallSkillId
+} from "./readings.js";
 import { isSkillUnlocked, prerequisitesFor } from "./scheduler.js";
 
 const NODE_WIDTH = 176;
@@ -14,6 +20,29 @@ export function mapSkillStatus(tree, state, skillId) {
   if (!skill || !isSkillUnlocked(tree, state.skills, skillId)) return "locked";
   if (skill.attempts === 0) return "unseen";
   return skillIsReady(tree, skill) ? "ready" : "learning";
+}
+
+function wordFacetDetails(entry, tree, readings, state) {
+  const definitions = [
+    { key: "sound", label: "Sound", direction: "Written form → reading", skillId: readingSkillId(entry) },
+    { key: "written-form", label: "Written form", direction: "Reading → written form", skillId: wordFormSkillId(entry) },
+    { key: "meaning-recognition", label: "Meaning", direction: "Japanese → meaning", skillId: wordMeaningSkillId(entry) },
+    { key: "meaning-recall", label: "Recall", direction: "Meaning → Japanese", skillId: wordRecallSkillId(entry) }
+  ];
+  return definitions.map((definition) => {
+    const skill = state.skills[definition.skillId];
+    const baseStatus = mapSkillStatus(tree, state, definition.skillId);
+    const ready = definition.key === "sound"
+      ? readingIsReady(readings, skill)
+      : skillIsReady(tree, skill);
+    return {
+      ...definition,
+      status: ready ? "ready" : baseStatus === "ready" ? "learning" : baseStatus,
+      ready,
+      knownPercent: Math.round(probabilityKnown(skill) * 100),
+      attempts: skill?.attempts ?? 0
+    };
+  });
 }
 
 export function practiceTargetFor(tree, state, skillId, visited = new Set()) {
@@ -154,6 +183,31 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
         || a.known - b.known
         || a.entry.term.localeCompare(b.entry.term));
     const readyReadings = readingStats.filter((entry) => entry.ready).length;
+    const words = scenarioReadings.map((entry) => {
+      const facets = wordFacetDetails(entry, tree, readings, state);
+      const ready = facets.filter((facet) => facet.ready).length;
+      const attempts = facets.reduce((total, facet) => total + facet.attempts, 0);
+      const weakest = [...facets].sort((a, b) => Number(a.ready) - Number(b.ready)
+        || a.knownPercent - b.knownPercent
+        || a.attempts - b.attempts)[0];
+      return {
+        id: entry.id,
+        term: entry.term,
+        reading: entry.reading,
+        meaning: entry.meaning,
+        facets,
+        ready,
+        total: facets.length,
+        attempts,
+        targetSkillId: weakest.skillId,
+        status: ready === facets.length ? "ready" : attempts === 0 ? "unseen" : "learning",
+        knownPercent: Math.round(facets.reduce((total, facet) => total + facet.knownPercent, 0) / facets.length)
+      };
+    }).sort((a, b) => a.ready - b.ready
+      || a.knownPercent - b.knownPercent
+      || a.term.localeCompare(b.term));
+    const facetReady = words.reduce((total, word) => total + word.ready, 0);
+    const facetTotal = words.reduce((total, word) => total + word.total, 0);
 
     return {
       id: scenario.id,
@@ -163,6 +217,9 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
       phraseTotal: nodes.length,
       readingReady: readyReadings,
       readingTotal: readingStats.length,
+      facetReady,
+      facetTotal,
+      words,
       weakestReadings: readingStats.slice(0, 3).map(({ entry }) => ({
         id: entry.id,
         term: entry.term,

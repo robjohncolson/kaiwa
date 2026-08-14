@@ -53,7 +53,7 @@ import {
   recordSessionCard,
   summarizeGuidedSession
 } from "./session.js";
-import { buildSkillMap, mapSkillStatus, practiceTargetFor, schedulerReason } from "./map.js";
+import { buildSkillMap, practiceTargetFor, schedulerReason } from "./map.js";
 import {
   clearState,
   createInitialState,
@@ -511,6 +511,7 @@ function breakdownCardReason(active, item) {
     explicit: "authored component",
     grammar: "grammar pattern",
     pragmatic: "social meaning",
+    meaning: "word meaning",
     kanji: "written kanji component",
     decomposition: "phrase component",
     prerequisite: "direct prerequisite",
@@ -586,25 +587,60 @@ function renderCard() {
       : "scheduler selected";
   const isReadingCard = itemTestsReading(item);
   const isKanjiCard = item.mode === "kanji";
+  const isWordFormCard = item.facet === "written-form";
+  const isMeaningCard = item.facet === "meaning-recognition";
+  const isRecallCard = item.facet === "meaning-recall";
+  const japaneseCandidate = isReadingCard || isKanjiCard || isWordFormCard || isRecallCard;
+  const cardTitle = isKanjiCard
+    ? "Rebuild the written word."
+    : isReadingCard
+      ? "Match the word to its reading."
+      : isWordFormCard
+        ? "Rebuild the complete word."
+        : isMeaningCard
+          ? "Choose what the word means."
+          : isRecallCard
+            ? "Recall the Japanese word."
+            : "Read the Japanese first.";
+  const chromeTitle = isKanjiCard
+    ? "Which kanji fits?"
+    : isReadingCard
+      ? "Does this reading match?"
+      : isWordFormCard
+        ? "Which written form matches?"
+        : isMeaningCard
+          ? "What does this mean?"
+          : isRecallCard
+            ? "Which Japanese word fits?"
+            : "Is this the answer?";
+  const direction = isKanjiCard
+    ? "Reading → written form"
+    : isReadingCard
+      ? "Written form → hiragana"
+      : isWordFormCard
+        ? "Reading → written form"
+        : isMeaningCard
+          ? "Japanese → meaning"
+          : isRecallCard
+            ? "Meaning → Japanese"
+            : "Japanese → meaning";
   screenHeading(
     item.scenarioTitle,
-    isKanjiCard
-      ? "Rebuild the written word."
-      : isReadingCard ? "Match the word to its reading." : "Read the Japanese first.",
+    cardTitle,
     item.instruction
   );
   dom.screen.dataset.itemId = item.id;
   setChrome({
-    title: isKanjiCard ? "Which kanji fits?" : isReadingCard ? "Does this reading match?" : "Is this the answer?",
+    title: chromeTitle,
     context: `${progress} · ${Math.round(probabilityKnown(skill) * 100)}% BKT`,
     progress: cardUi.answered ? 0.72 : 0.52
   });
 
   const prompt = element("p", "prompt-japanese");
-  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard || isKanjiCard });
+  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard || isKanjiCard || isWordFormCard || isRecallCard });
   dom.screen.append(prompt);
   addMeta(
-    isKanjiCard ? "Reading → written form" : isReadingCard ? "Written form → hiragana" : "Japanese → meaning",
+    direction,
     `${item.options.length} candidates`
   );
   const reason = context === "repair"
@@ -626,10 +662,24 @@ function renderCard() {
     candidate.append(element(
       "p",
       "candidate-label",
-      `${isKanjiCard ? "Possible kanji" : isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${options.length}`
+      `${isKanjiCard
+        ? "Possible kanji"
+        : isReadingCard
+          ? "Possible reading"
+          : isWordFormCard
+            ? "Possible written form"
+            : isMeaningCard
+              ? "Possible meaning"
+              : isRecallCard
+                ? "Possible Japanese word"
+                : "Candidate"} ${cardUi.optionIndex + 1} of ${options.length}`
     ));
-    const label = element("p", `candidate-text${isReadingCard || isKanjiCard ? " candidate-japanese" : ""}`);
-    appendJapanese(label, option.label, isKanjiCard ? { neverShow: true } : { alwaysShow: true });
+    const label = element("p", `candidate-text${japaneseCandidate ? " candidate-japanese" : ""}`);
+    appendJapanese(
+      label,
+      option.label,
+      isKanjiCard || isWordFormCard || isRecallCard ? { neverShow: true } : { alwaysShow: true }
+    );
     candidate.append(label);
     dom.screen.append(candidate);
     setActions(
@@ -643,7 +693,7 @@ function renderCard() {
   result.dataset.result = cardUi.correct ? "correct" : "incorrect";
   result.append(element("p", "result-label", cardUi.correct ? "Correct" : "Review this one"));
   const japanese = element("p", "line-japanese");
-  appendJapanese(japanese, item.answer.ja, isReadingCard ? { neverShow: true } : { alwaysShow: true });
+  appendJapanese(japanese, item.answer.ja, isReadingCard || item.wordId ? { neverShow: true } : { alwaysShow: true });
   result.append(japanese);
   if (item.answer.reading) result.append(element("p", "answer-reading", item.answer.reading));
   const meaning = element("p", "line-meaning");
@@ -936,10 +986,10 @@ function endBreakdown() {
 }
 
 function renderSessionIntro() {
-  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Three weak phrase checks, three contextual readings without furigana, then one speak-first closed-loop mission.");
+  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Three weak phrase checks, then sound, written-form, and meaning facets before one speak-first closed-loop mission.");
   setChrome({ title: "Ready to begin?", context: "Guided practice · step 1", progress: 0.18 });
   const stages = element("ol", "stage-list");
-  ["Recognize three Japanese prompts", "Read three difficult words", "Speak the fixed loop and abort"].forEach((label, index) => {
+  ["Recognize three Japanese prompts", "Check three different word facets", "Speak the fixed loop and abort"].forEach((label, index) => {
     stages.append(element("li", index === 0 ? "current" : "", label));
   });
   dom.screen.append(stages);
@@ -976,7 +1026,7 @@ function renderSessionOverview() {
   setChrome({ title: "Finish the closed loop.", context: "Guided practice · spoken mission", progress: 0.82 });
   addDataCard("SELECTED FROM YOUR EVIDENCE", mission.title);
   const stages = element("ol", "stage-list");
-  stages.append(element("li", "done", "Three weak phrases"), element("li", "done", "Three no-furigana readings"), element("li", "current", "Speak-first mission"));
+  stages.append(element("li", "done", "Three weak phrases"), element("li", "done", "Sound, form, and meaning facets"), element("li", "current", "Speak-first mission"));
   dom.screen.append(stages);
   setActions(
     { label: "End session", onClick: confirmEndSession },
@@ -993,12 +1043,12 @@ function renderSessionSummary() {
   const session = guidedSession();
   if (!session) return show("home");
   const summary = summarizeGuidedSession(session, { state, tree, readings, items });
-  screenHeading("SESSION COMPLETE", "The loop is closed.", "Recognition, reading, and speaking remain separate evidence channels.");
+  screenHeading("SESSION COMPLETE", "The loop is closed.", "Phrase, word-facet, and speaking evidence remain separate channels.");
   setChrome({ title: "Session complete.", context: "Guided practice · summary", progress: 1 });
   const metrics = element("ul", "metric-list");
   metrics.append(
     metric(`${summary.correctCards}/${summary.cardsTotal}`, "objective checks correct"),
-    metric(`${summary.readingCorrect}/${summary.readingTotal}`, "no-furigana readings correct"),
+    metric(`${summary.facetCorrect}/${summary.facetTotal}`, "word facets correct"),
     metric(summary.missionOutcome ?? "complete", "spoken mission outcome")
   );
   if (summary.production) metrics.append(metric(`${summary.production.clean}/${summary.production.total}`, "spoken lines clean"));
@@ -1615,12 +1665,16 @@ function renderMapIsland() {
   setChrome({ title: "Choose one scenario.", context: `${index + 1} of ${choices.length}`, progress: 0.28 });
   if (island.id !== "__back") {
     const orbit = element("div", "progress-orbit");
-    const total = island.phraseTotal + island.readingTotal;
-    const ready = island.phraseReady + island.readingReady;
+    const total = island.phraseTotal + island.facetTotal;
+    const ready = island.phraseReady + island.facetReady;
     orbit.style.setProperty("--value", `${ready / Math.max(1, total) * 360}deg`);
     orbit.append(element("span", "", `${ready}/${total}`));
     dom.screen.append(orbit);
-    addMeta(`${island.phraseReady}/${island.phraseTotal} phrases`, `${island.readingReady}/${island.readingTotal} readings`);
+    addMeta(
+      `${island.phraseReady}/${island.phraseTotal} phrases`,
+      `${island.facetReady}/${island.facetTotal} word facets`,
+      `${island.readingReady}/${island.readingTotal} sounds retired`
+    );
   }
   setActions(
     { label: "Another →", onClick: () => show("map-island", { index: cycleIndex(index, choices.length) }) },
@@ -1630,16 +1684,21 @@ function renderMapIsland() {
 
 function mapSkillsForScenario(scenarioId) {
   const island = currentMap().islands.find((candidate) => candidate.id === scenarioId);
-  const readingNodes = readings.entries.filter((entry) => entry.scenarioId === scenarioId).map((entry) => ({
-    id: readingSkillId(entry),
-    label: `${entry.term} · ${entry.reading}`,
-    status: mapSkillStatus(tree, state, readingSkillId(entry)),
-    knownPercent: Math.round(probabilityKnown(state.skills[readingSkillId(entry)]) * 100),
-    attempts: state.skills[readingSkillId(entry)]?.attempts ?? 0,
+  const wordNodes = island.words.map((word) => ({
+    id: `word.${word.id}`,
+    label: `${word.term} · ${word.reading}`,
+    meaning: word.meaning,
+    status: word.status,
+    knownPercent: word.knownPercent,
+    attempts: word.attempts,
     prerequisites: [],
-    reading: true
+    word: true,
+    facets: word.facets,
+    facetReady: word.ready,
+    facetTotal: word.total,
+    targetSkillId: word.targetSkillId
   }));
-  return [...island.nodes, ...readingNodes, { id: "__back", label: "Back to scenarios", back: true }];
+  return [...island.nodes, ...wordNodes, { id: "__back", label: "Back to scenarios", back: true }];
 }
 
 function renderMapSkill() {
@@ -1647,16 +1706,40 @@ function renderMapSkill() {
   const skills = mapSkillsForScenario(scenario.id);
   const index = screen.data.index ?? 0;
   const skill = skills[index];
-  screenHeading("ONE SKILL", skill.label, skill.back ? "Return to the scenario chooser." : "This is one node in the prerequisite path. Practice resolves a locked node to its earliest available prerequisite.");
+  screenHeading(
+    skill.word ? "WORD FACETS" : "ONE SKILL",
+    skill.label,
+    skill.back
+      ? "Return to the scenario chooser."
+      : skill.word
+        ? skill.meaning
+        : "This is one node in the prerequisite path. Practice resolves a locked node to its earliest available prerequisite."
+  );
   setChrome({ title: scenario.title, context: `${index + 1} of ${skills.length}`, progress: 0.5 });
   if (!skill.back) {
-    addMeta(skill.status, `${skill.knownPercent}% BKT`, `${skill.attempts} checks`, skill.reading ? "reading skill" : `${skill.prerequisites.length} prerequisites`);
+    addMeta(
+      skill.status,
+      `${skill.knownPercent}% average BKT`,
+      `${skill.attempts} checks`,
+      skill.word ? `${skill.facetReady}/${skill.facetTotal} facets ready` : `${skill.prerequisites.length} prerequisites`
+    );
     const label = dom.screen.querySelector(".screen-title");
     appendJapanese(label, skill.label, { alwaysShow: true });
+    if (skill.word) {
+      const facets = element("ol", "stage-list");
+      for (const facet of skill.facets) {
+        facets.append(element(
+          "li",
+          facet.ready ? "done" : facet.skillId === skill.targetSkillId ? "current" : "",
+          `${facet.label}: ${facet.direction} · ${facet.knownPercent}% BKT · ${facet.status}`
+        ));
+      }
+      dom.screen.append(facets);
+    }
   }
   setActions(
     { label: "Next skill →", onClick: () => show("map-skill", { scenarioId: scenario.id, index: cycleIndex(index, skills.length) }) },
-    { label: skill.back ? "Back" : "Practice", onClick: () => skill.back ? show("map-island", { index: 0 }) : focusSkill(skill.id) }
+    { label: skill.back ? "Back" : skill.word ? "Practice weakest" : "Practice", onClick: () => skill.back ? show("map-island", { index: 0 }) : focusSkill(skill.targetSkillId ?? skill.id) }
   );
 }
 

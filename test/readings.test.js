@@ -7,12 +7,16 @@ import {
   augmentTreeWithReadings,
   createReadingCharacterItems,
   createReadingItems,
+  createWordFacetItems,
   itemTestsReading,
   kanjiCharacters,
   readingCharacterSkillId,
   readingIsReady,
   readingEntriesIn,
   readingSkillId,
+  wordFormSkillId,
+  wordMeaningSkillId,
+  wordRecallSkillId,
   uncoveredKanji
 } from "../src/readings.js";
 import { applyObservation } from "../src/scheduler.js";
@@ -122,8 +126,45 @@ test("multi-kanji readings generate remediation-only cards for every written cha
       edge.from === readingCharacterSkillId(entry, index)
       && edge.to === readingSkillId(entry)
     ));
+    assert.ok(tree.decompositions.some((edge) =>
+      edge.from === readingCharacterSkillId(entry, index)
+      && edge.to === wordFormSkillId(entry)
+    ));
     assert.match(card.answer.note, /not a universal reading/);
   });
+});
+
+test("every word gains independent sound, form, meaning, and recall facets", async () => {
+  const [content, baseTree, readings] = await Promise.all([
+    readJson("../data/scenarios.json"),
+    readJson("../data/tree.json"),
+    readJson("../data/readings.json")
+  ]);
+  const tree = augmentTreeWithReadings(baseTree, readings);
+  const nodeIds = new Set(tree.nodes.map((node) => node.id));
+  const cards = createWordFacetItems(readings, content);
+
+  assert.equal(cards.length, readings.entries.length * 3);
+  for (const entry of readings.entries) {
+    const wordCards = cards.filter((card) => card.wordId === entry.id);
+    assert.deepEqual(wordCards.map((card) => card.facet), [
+      "written-form",
+      "meaning-recognition",
+      "meaning-recall"
+    ]);
+    assert.ok(nodeIds.has(readingSkillId(entry)));
+    assert.ok(nodeIds.has(wordFormSkillId(entry)));
+    assert.ok(nodeIds.has(wordMeaningSkillId(entry)));
+    assert.ok(nodeIds.has(wordRecallSkillId(entry)));
+    assert.ok(wordCards.every((card) => card.options.length === 3));
+    assert.ok(wordCards.every((card) => card.options.filter((option) => option.correct).length === 1));
+    assert.ok(wordCards.every((card) => card.options
+      .filter((option) => !option.correct)
+      .every((option) => option.diagnosticSkillIds.every((skillId) => nodeIds.has(skillId)))));
+    assert.ok(tree.decompositions.some((edge) => edge.from === readingSkillId(entry) && edge.to === wordRecallSkillId(entry)));
+    assert.ok(tree.decompositions.some((edge) => edge.from === wordFormSkillId(entry) && edge.to === wordRecallSkillId(entry)));
+    assert.ok(tree.decompositions.some((edge) => edge.from === wordMeaningSkillId(entry) && edge.to === wordRecallSkillId(entry)));
+  }
 });
 
 test("cards that ask for pronunciation explicitly suppress prompt furigana", async () => {

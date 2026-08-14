@@ -351,10 +351,42 @@ async function run() {
     check((await js(`document.querySelector(".result-card .answer-reading")?.textContent || ""`)).trim() === "こゆぐん しんとみちょう みなしろ", "place-reading correction shows one explicit reading line");
     await click("Home");
 
-    // A missed multi-kanji word must teach each written character beneath the whole reading.
-    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: "reading.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    // Every corpus word must expose independent sound, form, meaning, and recall evidence.
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: "word-form.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
     await cdp.send("Page.reload", {}, sessionId);
-    await eventually(async () => actionLabel("Menu"), "Home did not return for the kanji-component check");
+    await eventually(async () => actionLabel("Menu"), "Home did not return for the written-form facet");
+    await navigateTool("One quick card");
+    check(await js(`document.querySelector("#wizard-screen")?.dataset.itemId`) === "word-form-card.minashiro", "exact form focus opens the 三納代 written-form card");
+    check(await title() === "Rebuild the complete word.", "written-form facet states its task");
+    check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Reading → written form")`)), "written-form facet labels its direction");
+    check(await js(`[...document.querySelectorAll(".candidate-card rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "written-form candidates do not leak furigana");
+    await answerCard(true);
+    await click("Home");
+
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: "word-meaning.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return for the meaning facet");
+    await navigateTool("One quick card");
+    check(await title() === "Choose what the word means.", "meaning facet states its task");
+    check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Japanese → meaning")`)), "meaning facet labels its direction");
+    await answerCard(true);
+    await click("Home");
+
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: "word-recall.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return for the recall facet");
+    await navigateTool("One quick card");
+    check(await title() === "Recall the Japanese word.", "meaning-to-Japanese facet states its task");
+    check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Meaning → Japanese")`)), "recall facet labels its direction");
+    check(await js(`[...document.querySelectorAll(".candidate-card rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "recall candidates do not leak furigana");
+    await answerCard(false);
+    await click("Break it down");
+    check(await js(`(() => { const active = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active; return ["reading.minashiro", "word-form.minashiro", "word-meaning.minashiro"].every(id => active.componentSkillIds.includes(id)); })()`), "a recall miss opens independent sound, form, and meaning nodes");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.breakdown.active = null; state.focus = { scenarioId: null, skillId: "reading.minashiro", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return after the word-facet checks");
+
+    // A missed multi-kanji word must teach each written character beneath the whole reading.
     await navigateTool("One quick card");
     check(await js(`document.querySelector("#wizard-screen")?.dataset.itemId`) === "reading-card.minashiro", "exact reading focus opens 三納代");
     await answerCard(false);
@@ -444,6 +476,22 @@ async function run() {
     await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: null, mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Start practice"), "Home did not return after the place-reading check");
+
+    // The skill path groups each word's four independent Bayesian facets.
+    await navigateTool("Skill path");
+    for (let scenario = 0; scenario < 30 && await title() !== "Miyazaki place readings"; scenario += 1) await click("Another →");
+    check(await title() === "Miyazaki place readings", "skill path reaches the Miyazaki word corpus");
+    check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("word facets")`)), "scenario progress reports word-facet readiness");
+    await click("Open path");
+    for (let skill = 0; skill < 30 && await js(`document.querySelector(".screen-kicker")?.textContent`) !== "WORD FACETS"; skill += 1) await click("Next skill →");
+    check(await js(`document.querySelector(".screen-kicker")?.textContent`) === "WORD FACETS", "skill path groups a word instead of flattening four opaque nodes");
+    check(await js(`document.querySelectorAll(".stage-list li").length`) === 4, "word detail shows sound, form, meaning, and recall rows");
+    check(Boolean(await js(`document.querySelector(".stage-list")?.textContent.includes("Meaning → Japanese")`)), "word detail exposes the direction of every facet");
+    check(await actionLabel("Practice weakest"), "word detail targets its weakest facet directly");
+    await layout("390x844 word facets");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: null, mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Start practice"), "Home did not return after the word-facet map check");
 
     // Full guided loop at a common modern phone size.
     await click("Start practice");
