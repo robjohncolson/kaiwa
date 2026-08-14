@@ -11,6 +11,10 @@ export function readingSkillId(entry) {
   return `reading.${entry.id}`;
 }
 
+export function itemTestsReading(item) {
+  return item?.mode === "reading" || item?.testsReading === true;
+}
+
 export function augmentTreeWithReadings(tree, readings) {
   const existing = new Set(tree.nodes.map((node) => node.id));
   const generated = [];
@@ -58,9 +62,11 @@ export function createReadingItems(readings, contentPack) {
       id: `reading-card.${entry.id}`,
       skillId: readingSkillId(entry),
       mode: "reading",
+      testsReading: true,
+      breakdownLeaf: true,
       priority: entry.priority ?? 0.9,
       prompt: entry.term,
-      instruction: "Read this without furigana.",
+      instruction: "Read the large word without furigana. Is the hiragana below its pronunciation?",
       options: orderedOptions(entry, readings),
       answer: {
         ja: entry.term,

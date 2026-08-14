@@ -23,6 +23,7 @@
           "id": "polite.thanks.meaning",
           "skillId": "polite.basics",
           "mode": "meaning",
+          "breakdownLeaf": true,
           "prompt": "ありがとうございました。",
           "instruction": "What does this safe closing mean?",
           "options": [
@@ -66,6 +67,7 @@
           "id": "vocab.toriyose.focus",
           "skillId": "vocab.toriyose",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "取り寄せ",
           "instruction": "Local task word: choose its reading and meaning.",
           "options": [
@@ -80,6 +82,7 @@
           "id": "vocab.uketori.focus",
           "skillId": "vocab.uketori",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "受け取り",
           "instruction": "Choose the reading and trip meaning.",
           "options": [
@@ -94,6 +97,7 @@
           "id": "vocab.nyuka.focus",
           "skillId": "vocab.nyuka",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "入荷",
           "instruction": "Choose the store meaning.",
           "options": [
@@ -177,6 +181,7 @@
           "id": "vocab.roppakubun.focus",
           "skillId": "vocab.roppakubun",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "六泊分",
           "instruction": "Choose the reading and amount.",
           "options": [
@@ -191,6 +196,7 @@
           "id": "vocab.henkin.focus",
           "skillId": "vocab.henkin",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "返金",
           "instruction": "Choose the reading and meaning.",
           "options": [
@@ -205,6 +211,7 @@
           "id": "vocab.kanou.focus",
           "skillId": "vocab.kanou",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "可能",
           "instruction": "Choose the reading and function.",
           "options": [
@@ -388,6 +395,7 @@
           "id": "vocab.menthol.focus",
           "skillId": "vocab.menthol_crystal",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "メントールの結晶",
           "instruction": "Choose the precise meaning.",
           "options": [
@@ -487,6 +495,7 @@
           "id": "nav.tei.focus",
           "skillId": "nav.tei_local",
           "mode": "focus",
+          "testsReading": true,
           "priority": 1.3,
           "prompt": "山浦丁",
           "instruction": "Local reading trap: choose the correct branch.",
@@ -502,6 +511,7 @@
           "id": "nav.niiji.focus",
           "skillId": "nav.niiji",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "尼寺",
           "instruction": "Saga reading trap: choose the local reading.",
           "options": [
@@ -516,6 +526,7 @@
           "id": "nav.ooaza.focus",
           "skillId": "nav.ooaza",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "大字",
           "instruction": "Choose its reading and address function.",
           "options": [
@@ -544,6 +555,7 @@
           "id": "nav.vicinity.focus",
           "skillId": "nav.vicinity",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "付近",
           "instruction": "What does this suffix warn you about?",
           "options": [
@@ -572,6 +584,7 @@
           "id": "nav.phone.focus",
           "skillId": "nav.phone_search",
           "mode": "focus",
+          "testsReading": true,
           "prompt": "電話番号検索",
           "instruction": "What search method is this?",
           "options": [
@@ -586,6 +599,7 @@
           "id": "nav.address.reply",
           "skillId": "nav.address_search",
           "mode": "reply",
+          "testsReading": true,
           "prompt": "住所に「山浦丁」とあります。どの読み方を選びますか？",
           "instruction": "Choose the correct navigation response.",
           "options": [
@@ -626,13 +640,14 @@
           "id": "geo.miyazaki.address.reply",
           "skillId": "geo.miyazaki_address",
           "mode": "reply",
+          "testsReading": true,
           "priority": 1.2,
           "prompt": "ナビに「児湯郡新富町三納代」と出ています。どう読みますか？",
           "instruction": "Choose the verified address reading.",
           "options": [
             { "id": "verified", "label": "こゆぐん しんとみちょう みなしろ", "correct": true },
-            { "id": "sannoudai", "label": "じゆぐん しんとみちょう さんのうだい", "correct": false },
-            { "id": "mixed", "label": "こゆぐん にいとみまち みのうしろ", "correct": false }
+            { "id": "sannoudai", "label": "じゆぐん しんとみちょう さんのうだい", "correct": false, "diagnosticSkillIds": ["reading.koyugun", "reading.minashiro"] },
+            { "id": "mixed", "label": "こゆぐん にいとみまち みのうしろ", "correct": false, "diagnosticSkillIds": ["reading.shintomichou", "reading.minashiro"] }
           ],
           "answer": { "ja": "児湯郡新富町三納代", "reading": "こゆぐん しんとみちょう みなしろ", "meaning": "Koyu District, Shintomi Town, Minashiro.", "note": "Japan Post's official address data confirms みなしろ; the supplied Sannōdai reading was wrong." },
           "zoom": { "context": "児湯郡 → 新富町 → 三納代", "breakdown": "Treat each address component as a separate tested reading." }
@@ -641,12 +656,13 @@
           "id": "geo.miyazaki.cities.reply",
           "skillId": "geo.miyazaki_cities",
           "mode": "reply",
+          "testsReading": true,
           "prompt": "「西都市」と「都城市」をどう読み分けますか？",
           "instruction": "Choose both city readings.",
           "options": [
             { "id": "correct", "label": "さいとし / みやこのじょうし", "correct": true },
-            { "id": "obvious", "label": "にしみやこし / とじょうし", "correct": false },
-            { "id": "reversed", "label": "みやこのじょうし / さいとし", "correct": false }
+            { "id": "obvious", "label": "にしみやこし / とじょうし", "correct": false, "diagnosticSkillIds": ["reading.saitoshi", "reading.miyakonojoushi"] },
+            { "id": "reversed", "label": "みやこのじょうし / さいとし", "correct": false, "diagnosticSkillIds": ["reading.saitoshi", "reading.miyakonojoushi"] }
           ],
           "answer": { "ja": "西都市 / 都城市", "reading": "さいとし / みやこのじょうし", "meaning": "Saito City / Miyakonojo City.", "note": "Do not infer these place readings one character at a time." },
           "zoom": { "context": "西都市（さいとし） / 都城市（みやこのじょうし）", "breakdown": "The full place name is the unit being learned." }
@@ -791,6 +807,494 @@
           ],
           "answer": { "ja": "年季が入っている", "reading": "ねんきが はいっている", "meaning": "Well-worn, seasoned, or showing years of skilled use.", "note": "Usually warm or admiring, not the same as shabby." },
           "zoom": { "context": "年季が入った道具", "breakdown": "年季 is accumulated years; the phrase can praise an old tool, shop, or practiced skill." }
+        }
+      ]
+    },
+    {
+      "id": "drugstore-vitamin-e",
+      "title": "Vitamin E at a drugstore",
+      "purpose": "Find the supplement aisle, recognize useful package labels, and ask about natural vitamin E or mixed tocopherols.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "drugstore.find_vitamin_e", "ja": "ビタミンEのサプリはどこにありますか？", "meaning": "Where are the vitamin E supplements?" },
+        { "skillId": "drugstore.ask_natural_e", "ja": "天然型ビタミンEのソフトカプセルはありますか？", "meaning": "Do you have natural-form vitamin E softgels?" },
+        { "skillId": "drugstore.ask_mixed_tocopherols", "ja": "混合トコフェロールのサプリはありますか？", "meaning": "Do you have a mixed-tocopherol supplement?" },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "vocab.kusuri-sign.focus",
+          "skillId": "vocab.kusuri_sign",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "薬",
+          "instruction": "Choose the reading and what this storefront sign indicates.",
+          "options": [
+            { "id": "medicine", "label": "くすり — medicine / drugstore", "correct": true },
+            { "id": "food", "label": "しょくひん — food", "correct": false },
+            { "id": "drink", "label": "のみもの — drinks", "correct": false }
+          ],
+          "answer": { "ja": "薬", "reading": "くすり", "meaning": "Medicine; on a sign, it points to a pharmacy or drugstore.", "note": "A large 薬 sign is the quickest visual cue for a drugstore." },
+          "zoom": { "context": "薬の看板", "breakdown": "薬 means medicine; the same kanji is used on prominent drugstore signs." }
+        },
+        {
+          "id": "vocab.eiyou-kinou-shokuhin.focus",
+          "skillId": "vocab.eiyou_kinou_shokuhin",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "栄養機能食品",
+          "instruction": "What kind of package label is this?",
+          "options": [
+            { "id": "nutrient", "label": "えいようきのうしょくひん — nutrient function food", "correct": true },
+            { "id": "otc", "label": "いっぱんよういやくひん — over-the-counter medicine", "correct": false },
+            { "id": "cosmetic", "label": "けしょうひん — cosmetic", "correct": false }
+          ],
+          "answer": { "ja": "栄養機能食品", "reading": "えいようきのうしょくひん", "meaning": "Nutrient function food; a common regulated label on supplements.", "note": "Scan for this in the supplement section, but still check the ingredient name on the package." },
+          "zoom": { "context": "栄養機能食品（ビタミンE）", "breakdown": "栄養 is nutrition, 機能 is function, and 食品 is food." }
+        },
+        {
+          "id": "vocab.daisanrui-iyakuhin.focus",
+          "skillId": "vocab.daisanrui_iyakuhin",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "第3類医薬品",
+          "instruction": "Choose the reading and shelf category.",
+          "options": [
+            { "id": "class-three", "label": "だいさんるいいやくひん — class-3 OTC medicine", "correct": true },
+            { "id": "supplement", "label": "えいようほじょしょくひん — dietary supplement", "correct": false },
+            { "id": "prescription", "label": "しょほうせんいやくひん — prescription medicine", "correct": false }
+          ],
+          "answer": { "ja": "第3類医薬品", "reading": "だいさんるいいやくひん", "meaning": "Class-3 over-the-counter medicine.", "note": "This is a medicine-shelf classification, not the same label as a food-grade supplement." },
+          "zoom": { "context": "第3類医薬品の棚", "breakdown": "第3類 identifies the regulatory class; 医薬品 means a medicinal product." }
+        },
+        {
+          "id": "vocab.tennengata-vitamin-e.focus",
+          "skillId": "vocab.tennengata_vitamin_e",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "天然型ビタミンE",
+          "instruction": "What package wording are you recognizing?",
+          "options": [
+            { "id": "natural", "label": "てんねんがたビタミンE — natural-form vitamin E", "correct": true },
+            { "id": "mixed", "label": "こんごうトコフェロール — mixed tocopherols", "correct": false },
+            { "id": "synthetic", "label": "ごうせいビタミンE — synthetic vitamin E", "correct": false }
+          ],
+          "answer": { "ja": "天然型ビタミンE", "reading": "てんねんがた ビタミンE", "meaning": "Natural-form vitamin E.", "note": "天然型 is the package wording to distinguish the natural form." },
+          "zoom": { "context": "天然型ビタミンE", "breakdown": "天然 means natural; 型 means type or form." }
+        },
+        {
+          "id": "vocab.kongou-tocopherols.focus",
+          "skillId": "vocab.kongou_tocopherols",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "混合トコフェロール",
+          "instruction": "Which ingredient wording is this?",
+          "options": [
+            { "id": "mixed", "label": "こんごうトコフェロール — mixed tocopherols", "correct": true },
+            { "id": "natural", "label": "てんねんがたビタミンE — natural-form vitamin E", "correct": false },
+            { "id": "wheat", "label": "こむぎはいがゆ — wheat germ oil", "correct": false }
+          ],
+          "answer": { "ja": "混合トコフェロール", "reading": "こんごう トコフェロール", "meaning": "Mixed tocopherols.", "note": "Use the full ingredient phrase when asking staff; do not assume every branch stocks it." },
+          "zoom": { "context": "混合トコフェロールのサプリ", "breakdown": "混合 means mixed or blended; トコフェロール is tocopherol." }
+        },
+        {
+          "id": "drugstore.find-vitamin-e.meaning",
+          "skillId": "drugstore.find_vitamin_e",
+          "mode": "meaning",
+          "prompt": "ビタミンEのサプリはどこにありますか？",
+          "instruction": "What are you asking the clerk?",
+          "options": [
+            { "id": "where", "label": "Where are the vitamin E supplements?", "correct": true },
+            { "id": "drink", "label": "Which energy drink contains vitamin E?", "correct": false },
+            { "id": "price", "label": "How much does this vitamin E cost?", "correct": false }
+          ],
+          "answer": { "ja": "ビタミンEのサプリはどこにありますか？", "reading": "ビタミンEの サプリは どこに ありますか？", "meaning": "Where are the vitamin E supplements?", "note": "This is the fastest general question when you cannot find the supplement aisle." }
+        },
+        {
+          "id": "drugstore.ask-natural-e.meaning",
+          "skillId": "drugstore.ask_natural_e",
+          "mode": "meaning",
+          "prompt": "天然型ビタミンEのソフトカプセルはありますか？",
+          "instruction": "Which product form are you asking about?",
+          "options": [
+            { "id": "natural-softgel", "label": "Natural-form vitamin E softgels.", "correct": true },
+            { "id": "mixed-drink", "label": "A drink with mixed tocopherols.", "correct": false },
+            { "id": "synthetic-tablet", "label": "A prescription synthetic tablet.", "correct": false }
+          ],
+          "answer": { "ja": "天然型ビタミンEのソフトカプセルはありますか？", "reading": "てんねんがた ビタミンEの ソフトカプセルは ありますか？", "meaning": "Do you have natural-form vitamin E softgels?", "note": "Softgel is ソフトカプセル on Japanese packaging." }
+        },
+        {
+          "id": "drugstore.ask-mixed-tocopherols.meaning",
+          "skillId": "drugstore.ask_mixed_tocopherols",
+          "mode": "meaning",
+          "prompt": "混合トコフェロールのサプリはありますか？",
+          "instruction": "What specific ingredient are you asking for?",
+          "options": [
+            { "id": "mixed", "label": "A mixed-tocopherol supplement.", "correct": true },
+            { "id": "natural", "label": "Any natural vitamin drink.", "correct": false },
+            { "id": "medicine", "label": "A prescription vitamin medicine.", "correct": false }
+          ],
+          "answer": { "ja": "混合トコフェロールのサプリはありますか？", "reading": "こんごう トコフェロールの サプリは ありますか？", "meaning": "Do you have a mixed-tocopherol supplement?", "note": "The phrase asks about stock without making a claim that the store carries it." }
+        }
+      ]
+    },
+    {
+      "id": "family-messages",
+      "title": "Family messages + favors",
+      "purpose": "Reply warmly about a birth, ask someone to pass along souvenirs, and share a browser app.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "family.wish_safe_birth", "ja": "赤ちゃんとお母さんが無事でありますように。こっちからも祈ってるね。", "meaning": "I hope the baby and mother are both safe. I am praying from here too." },
+        { "skillId": "family.no_worry_birth", "ja": "会えなくても全然大丈夫だよ。今日は赤ちゃんのことに集中してね。", "meaning": "It is completely okay that we cannot meet. Focus on the baby today." },
+        { "skillId": "family.pass_omiyage", "ja": "お願いがあるんですけど、もし熊本に行く前に二人に会えなかったら、このお土産を渡してもらえませんか？", "meaning": "I have a favor: if I cannot see the two of them before going to Kumamoto, could you pass them these souvenirs?" },
+        { "skillId": "family.sampler_app_made", "ja": "あのサンプラーの取扱説明書をもとに、アプリを作ってみました。", "meaning": "I made an app based on that sampler's instruction manual." },
+        { "skillId": "family.try_browser_app", "ja": "インストールは要らなくて、ブラウザで開くだけです。よかったら使ってみてください！", "meaning": "There is no installation; just open it in a browser. Please give it a try if you like." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "vocab.buji.focus",
+          "skillId": "vocab.buji",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "無事",
+          "instruction": "Choose the reading and meaning in a birth wish.",
+          "options": [
+            { "id": "safe", "label": "ぶじ — safe / without harm", "correct": true },
+            { "id": "healthy", "label": "げんき — well / energetic", "correct": false },
+            { "id": "quiet", "label": "しずか — quiet", "correct": false }
+          ],
+          "answer": { "ja": "無事", "reading": "ぶじ", "meaning": "Safe; without harm or trouble.", "note": "無事でありますように is a careful wish for safety without presuming the outcome." },
+          "zoom": { "context": "赤ちゃんとお母さんが無事でありますように", "breakdown": "無事 describes coming through safely; ように turns it into a wish." }
+        },
+        {
+          "id": "family.wish-safe-birth.meaning",
+          "skillId": "family.wish_safe_birth",
+          "mode": "meaning",
+          "prompt": "赤ちゃんとお母さんが無事でありますように。こっちからも祈ってるね。",
+          "instruction": "What careful wish are you sending?",
+          "options": [
+            { "id": "safe", "label": "I hope the baby and mother are safe; I am praying too.", "correct": true },
+            { "id": "congrats", "label": "The baby has definitely arrived; congratulations.", "correct": false },
+            { "id": "visit", "label": "I will come to the hospital right now.", "correct": false }
+          ],
+          "answer": { "ja": "赤ちゃんとお母さんが無事でありますように。こっちからも祈ってるね。", "reading": "あかちゃんと おかあさんが ぶじで ありますように。こっちからも いのってるね。", "meaning": "I hope the baby and mother are both safe. I am praying from here too.", "note": "This wishes them well without announcing the birth before it has happened." }
+        },
+        {
+          "id": "family.no-worry-birth.meaning",
+          "skillId": "family.no_worry_birth",
+          "mode": "meaning",
+          "prompt": "会えなくても全然大丈夫だよ。今日は赤ちゃんのことに集中してね。",
+          "instruction": "What reassurance are you giving?",
+          "options": [
+            { "id": "focus", "label": "Do not worry about meeting me; focus on the baby today.", "correct": true },
+            { "id": "later", "label": "Meet me later today after leaving the hospital.", "correct": false },
+            { "id": "upset", "label": "I am disappointed that you cancelled our plans.", "correct": false }
+          ],
+          "answer": { "ja": "会えなくても全然大丈夫だよ。今日は赤ちゃんのことに集中してね。", "reading": "あえなくても ぜんぜん だいじょうぶだよ。きょうは あかちゃんの ことに しゅうちゅうしてね。", "meaning": "It is completely okay that we cannot meet. Focus on the baby today.", "note": "Casual, warm family language that removes pressure from the cancelled meeting." }
+        },
+        {
+          "id": "vocab.omiyage-handoff.focus",
+          "skillId": "vocab.omiyage_handoff",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "お土産を渡してもらう",
+          "instruction": "Choose the reading and social action.",
+          "options": [
+            { "id": "pass", "label": "おみやげをわたしてもらう — have someone pass along a souvenir", "correct": true },
+            { "id": "receive", "label": "おみやげをうけとる — receive a souvenir", "correct": false },
+            { "id": "buy", "label": "おみやげをかってもらう — have someone buy a souvenir", "correct": false }
+          ],
+          "answer": { "ja": "お土産を渡してもらう", "reading": "おみやげを わたしてもらう", "meaning": "Have someone pass along a souvenir for you.", "note": "渡す is clearer than あげる when the person is acting as your messenger." },
+          "zoom": { "context": "このお土産を渡してもらえませんか？", "breakdown": "渡してもらう means receiving the favor of someone handing it over." }
+        },
+        {
+          "id": "family.pass-omiyage.meaning",
+          "skillId": "family.pass_omiyage",
+          "mode": "meaning",
+          "prompt": "お願いがあるんですけど、もし熊本に行く前に二人に会えなかったら、このお土産を渡してもらえませんか？",
+          "instruction": "What favor are you requesting?",
+          "options": [
+            { "id": "pass", "label": "If I miss the two of them, please pass along my souvenirs.", "correct": true },
+            { "id": "bring", "label": "Please bring the two of them with you to Kumamoto.", "correct": false, "diagnosticSkillIds": ["grammar.moshi_tara", "grammar.moraemasenka"] },
+            { "id": "buy", "label": "Please buy souvenirs for two people before I leave.", "correct": false, "diagnosticSkillIds": ["vocab.omiyage_handoff", "grammar.moraemasenka"] }
+          ],
+          "answer": { "ja": "お願いがあるんですけど、もし熊本に行く前に二人に会えなかったら、このお土産を渡してもらえませんか？", "reading": "おねがいが あるんですけど、もし くまもとに いく まえに ふたりに あえなかったら、この おみやげを わたしてもらえませんか？", "meaning": "I have a favor: if I cannot see the two of them before going to Kumamoto, could you pass them these souvenirs?", "note": "二人 keeps the public practice card reusable; replace it with the recipients' names in a private message." }
+        },
+        {
+          "id": "vocab.toriatsukai-setsumeisho.focus",
+          "skillId": "vocab.toriatsukai_setsumeisho",
+          "mode": "focus",
+          "testsReading": true,
+          "prompt": "取扱説明書",
+          "instruction": "Choose the product-document reading and meaning.",
+          "options": [
+            { "id": "manual", "label": "とりあつかいせつめいしょ — instruction manual", "correct": true },
+            { "id": "receipt", "label": "りょうしゅうしょ — receipt", "correct": false },
+            { "id": "warranty", "label": "ほしょうしょ — warranty certificate", "correct": false }
+          ],
+          "answer": { "ja": "取扱説明書", "reading": "とりあつかいせつめいしょ", "meaning": "Instruction manual / operating instructions.", "note": "説明書 is common in speech; 取扱説明書 is the full product term." },
+          "zoom": { "context": "サンプラーの取扱説明書をもとに", "breakdown": "取扱 is handling or operation; 説明書 is an explanatory document." }
+        },
+        {
+          "id": "family.sampler-app-made.meaning",
+          "skillId": "family.sampler_app_made",
+          "mode": "meaning",
+          "prompt": "あのサンプラーの取扱説明書をもとに、アプリを作ってみました。",
+          "instruction": "What are you introducing?",
+          "options": [
+            { "id": "made", "label": "I tried making an app based on the sampler manual.", "correct": true },
+            { "id": "found", "label": "I found the sampler's official app in its manual.", "correct": false },
+            { "id": "need", "label": "I need an app to translate the sampler manual.", "correct": false }
+          ],
+          "answer": { "ja": "あのサンプラーの取扱説明書をもとに、アプリを作ってみました。", "reading": "あの サンプラーの とりあつかいせつめいしょを もとに、アプリを つくってみました。", "meaning": "I made an app based on that sampler's instruction manual.", "note": "をもとに is the natural way to say a source was used as the basis." }
+        },
+        {
+          "id": "family.try-browser-app.meaning",
+          "skillId": "family.try_browser_app",
+          "mode": "meaning",
+          "prompt": "インストールは要らなくて、ブラウザで開くだけです。よかったら使ってみてください！",
+          "instruction": "What practical reassurance and invitation are you giving?",
+          "options": [
+            { "id": "browser", "label": "No installation is needed; open it in a browser and try it if you like.", "correct": true },
+            { "id": "store", "label": "Install it from the app store before opening the link.", "correct": false },
+            { "id": "manual", "label": "Read the manual before you are allowed to use it.", "correct": false }
+          ],
+          "answer": { "ja": "インストールは要らなくて、ブラウザで開くだけです。よかったら使ってみてください！", "reading": "インストールは いらなくて、ブラウザで ひらくだけです。よかったら つかってみてください！", "meaning": "There is no installation; just open it in a browser. Please give it a try if you like.", "note": "よかったら plus 使ってみてください makes the invitation soft rather than commanding." }
+        }
+      ]
+    },
+    {
+      "id": "phrase-building-blocks",
+      "title": "Grammar + social building blocks",
+      "purpose": "Recognize the reusable grammar and social moves that hold the longer trip phrases together.",
+      "abortSkillId": "abort.wakarimasen",
+      "allowedUserLines": [
+        { "skillId": "grammar.ndesukedo", "ja": "〜んですけど", "meaning": "Softly introduce background before a request or explanation." },
+        { "skillId": "grammar.moraemasenka", "ja": "〜てもらえませんか", "meaning": "Could you do this for me?" },
+        { "skillId": "grammar.moshi_tara", "ja": "もし〜たら", "meaning": "If it happens that…" },
+        { "skillId": "grammar.you_ni", "ja": "〜ように", "meaning": "Express a wish or desired outcome." },
+        { "skillId": "grammar.temo", "ja": "〜ても", "meaning": "Even if…" },
+        { "skillId": "grammar.moto_ni", "ja": "〜をもとに", "meaning": "Based on a source." },
+        { "skillId": "grammar.temiru", "ja": "〜てみる", "meaning": "Try doing something." },
+        { "skillId": "grammar.yokattara", "ja": "よかったら", "meaning": "If you would like." },
+        { "skillId": "grammar.ba_ii", "ja": "〜ばいいですか", "meaning": "What should I do?" },
+        { "skillId": "grammar.ni_kimashita", "ja": "〜に来ました", "meaning": "I came in order to do something." },
+        { "skillId": "grammar.sasete_kudasai", "ja": "〜させてください", "meaning": "Please let me do something." },
+        { "skillId": "grammar.mashouka", "ja": "〜ましょうか", "meaning": "Shall I do something?" },
+        { "skillId": "grammar.deshouka", "ja": "〜でしょうか", "meaning": "A softened question or request." },
+        { "skillId": "grammar.shika_masen", "ja": "〜しか〜ません", "meaning": "Nothing but / only." },
+        { "skillId": "grammar.you_ni_narimashita", "ja": "〜ようになりました", "meaning": "It has come to be the case that…" },
+        { "skillId": "grammar.te_kurenai", "ja": "〜てくれない？", "meaning": "Could you do this? Casual." },
+        { "skillId": "grammar.arimasuka", "ja": "〜はありますか", "meaning": "Do you have / is there…?" },
+        { "skillId": "grammar.dake", "ja": "〜だけです", "meaning": "It is only / just…" },
+        { "skillId": "pragmatic.accept_kindness", "ja": "お言葉に甘えて", "meaning": "Accept someone's kind offer." },
+        { "skillId": "pragmatic.safe_birth", "ja": "無事でありますように", "meaning": "Wish for safety without presuming the outcome." },
+        { "skillId": "abort.wakarimasen", "ja": "すみません、日本語がわかりません。", "meaning": "Sorry, I don't understand Japanese." }
+      ],
+      "staffPrompts": [],
+      "items": [
+        {
+          "id": "grammar.ndesukedo.focus", "skillId": "grammar.ndesukedo", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜んですけど", "instruction": "What conversational job does this ending do?",
+          "options": [
+            { "id": "background", "label": "Softly sets up background before what comes next.", "correct": true },
+            { "id": "command", "label": "Turns the sentence into a direct command.", "correct": false },
+            { "id": "certainty", "label": "Claims absolute certainty.", "correct": false }
+          ],
+          "answer": { "ja": "〜んですけど", "reading": "〜んですけど", "meaning": "Softly introduces a circumstance and leaves room for the request or explanation that follows.", "note": "It often sounds gentler than stating the request with no lead-in." }
+        },
+        {
+          "id": "grammar.moraemasenka.focus", "skillId": "grammar.moraemasenka", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜てもらえませんか", "instruction": "Whose action and benefit does this request describe?",
+          "options": [
+            { "id": "favor", "label": "Could you do this for me?", "correct": true },
+            { "id": "permission", "label": "May I do this myself?", "correct": false },
+            { "id": "prohibition", "label": "Please do not do this.", "correct": false }
+          ],
+          "answer": { "ja": "〜てもらえませんか", "reading": "〜てもらえませんか", "meaning": "Could you do this for me?", "note": "The speaker asks to receive the benefit of the other person's action." }
+        },
+        {
+          "id": "grammar.moshi-tara.focus", "skillId": "grammar.moshi_tara", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "もし〜たら", "instruction": "What relationship does this pattern establish?",
+          "options": [
+            { "id": "if", "label": "If that situation happens…", "correct": true },
+            { "id": "because", "label": "Because that situation happened…", "correct": false },
+            { "id": "although", "label": "Although that situation happened…", "correct": false }
+          ],
+          "answer": { "ja": "もし〜たら", "reading": "もし〜たら", "meaning": "If that situation happens…", "note": "もし highlights the condition; 〜たら carries the if/when relationship." }
+        },
+        {
+          "id": "grammar.you-ni.focus", "skillId": "grammar.you_ni", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜ように", "instruction": "What does this pattern do after a hoped-for outcome?",
+          "options": [
+            { "id": "wish", "label": "Turns the outcome into a wish or hope.", "correct": true },
+            { "id": "report", "label": "Reports that the outcome already happened.", "correct": false },
+            { "id": "order", "label": "Orders someone to create the outcome.", "correct": false }
+          ],
+          "answer": { "ja": "〜ように", "reading": "〜ように", "meaning": "May it be so / in hopes that…", "note": "With ありますように, it forms a careful wish rather than a prediction." }
+        },
+        {
+          "id": "grammar.temo.focus", "skillId": "grammar.temo", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜ても", "instruction": "Which relationship does this connector express?",
+          "options": [
+            { "id": "even-if", "label": "Even if / even though…", "correct": true },
+            { "id": "only-if", "label": "Only if…", "correct": false },
+            { "id": "before", "label": "Before doing…", "correct": false }
+          ],
+          "answer": { "ja": "〜ても", "reading": "〜ても", "meaning": "Even if / even though…", "note": "The following statement remains true despite the first condition." }
+        },
+        {
+          "id": "grammar.moto-ni.focus", "skillId": "grammar.moto_ni", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜をもとに", "instruction": "How is the preceding source being used?",
+          "options": [
+            { "id": "basis", "label": "As the basis or source for something.", "correct": true },
+            { "id": "destination", "label": "As the destination of movement.", "correct": false },
+            { "id": "replacement", "label": "As a replacement to discard.", "correct": false }
+          ],
+          "answer": { "ja": "〜をもとに", "reading": "〜をもとに", "meaning": "Based on / using as a foundation.", "note": "Use it for an app built from a manual, data, or another source." }
+        },
+        {
+          "id": "grammar.temiru.focus", "skillId": "grammar.temiru", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜てみる", "instruction": "What nuance does みる add here?",
+          "options": [
+            { "id": "try", "label": "Try doing it and see.", "correct": true },
+            { "id": "watch", "label": "Watch someone else do it.", "correct": false },
+            { "id": "finish", "label": "Finish doing it permanently.", "correct": false }
+          ],
+          "answer": { "ja": "〜てみる", "reading": "〜てみる", "meaning": "Try doing something.", "note": "In this grammar pattern, みる means trying, not literal visual seeing." }
+        },
+        {
+          "id": "grammar.yokattara.focus", "skillId": "grammar.yokattara", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "よかったら", "instruction": "How does this affect an invitation or offer?",
+          "options": [
+            { "id": "soft", "label": "Makes it optional: if you would like.", "correct": true },
+            { "id": "permission", "label": "Asks whether the speaker is permitted.", "correct": false },
+            { "id": "promise", "label": "Promises that the result will be good.", "correct": false }
+          ],
+          "answer": { "ja": "よかったら", "reading": "よかったら", "meaning": "If you would like / if it works for you.", "note": "It lowers pressure before an offer or invitation." }
+        },
+        {
+          "id": "grammar.ba-ii.focus", "skillId": "grammar.ba_ii", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜ばいいですか", "instruction": "What is the speaker asking?",
+          "options": [
+            { "id": "should", "label": "What would be good for me to do?", "correct": true },
+            { "id": "did", "label": "Why did you already do it?", "correct": false },
+            { "id": "must", "label": "You absolutely must do it.", "correct": false }
+          ],
+          "answer": { "ja": "〜ばいいですか", "reading": "〜ばいいですか", "meaning": "What should I do? / would it be good if I…?", "note": "With 伺えば, it asks when the speaker should visit." }
+        },
+        {
+          "id": "grammar.ni-kimashita.focus", "skillId": "grammar.ni_kimashita", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜に来ました", "instruction": "What does the phrase before に express?",
+          "options": [
+            { "id": "purpose", "label": "The purpose for coming.", "correct": true },
+            { "id": "origin", "label": "The place the speaker came from.", "correct": false },
+            { "id": "owner", "label": "The owner of an object.", "correct": false }
+          ],
+          "answer": { "ja": "〜に来ました", "reading": "〜に きました", "meaning": "I came in order to do something.", "note": "Attach に to the verb stem or action noun: 受け取りに来ました." }
+        },
+        {
+          "id": "grammar.sasete-kudasai.focus", "skillId": "grammar.sasete_kudasai", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜させてください", "instruction": "What permission is the speaker seeking?",
+          "options": [
+            { "id": "let-me", "label": "Please let me do it.", "correct": true },
+            { "id": "do-for-me", "label": "Please do it for me.", "correct": false },
+            { "id": "do-not", "label": "Please do not let me do it.", "correct": false }
+          ],
+          "answer": { "ja": "〜させてください", "reading": "〜させてください", "meaning": "Please let me do it.", "note": "In 払わせてください, the speaker asks to be allowed to pay." }
+        },
+        {
+          "id": "grammar.mashouka.focus", "skillId": "grammar.mashouka", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜ましょうか", "instruction": "What social move does this ending make?",
+          "options": [
+            { "id": "offer", "label": "Offers: shall I do it?", "correct": true },
+            { "id": "past", "label": "Reports that it was already done.", "correct": false },
+            { "id": "refusal", "label": "Politely refuses to do it.", "correct": false }
+          ],
+          "answer": { "ja": "〜ましょうか", "reading": "〜ましょうか", "meaning": "Shall I / shall we…?", "note": "Context tells whether it is an offer by the speaker or a joint suggestion." }
+        },
+        {
+          "id": "grammar.deshouka.focus", "skillId": "grammar.deshouka", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜でしょうか", "instruction": "How does this compare with a blunt direct question?",
+          "options": [
+            { "id": "soft-question", "label": "It makes the question more tentative and polite.", "correct": true },
+            { "id": "certain", "label": "It states that the answer is certain.", "correct": false },
+            { "id": "casual", "label": "It makes the question very casual.", "correct": false }
+          ],
+          "answer": { "ja": "〜でしょうか", "reading": "〜でしょうか", "meaning": "Would it be…? / might it be…?", "note": "返金は可能でしょうか avoids assuming that a refund is allowed." }
+        },
+        {
+          "id": "grammar.shika-masen.focus", "skillId": "grammar.shika_masen", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜しか〜ません", "instruction": "What limitation does this pattern express?",
+          "options": [
+            { "id": "only", "label": "Nothing except / only that amount or option.", "correct": true },
+            { "id": "everything", "label": "Everything including that option.", "correct": false },
+            { "id": "maybe", "label": "Perhaps that option.", "correct": false }
+          ],
+          "answer": { "ja": "〜しか〜ません", "reading": "〜しか〜ません", "meaning": "Nothing but / only…", "note": "しか pairs with a negative form even though the English meaning is only." }
+        },
+        {
+          "id": "grammar.you-ni-narimashita.focus", "skillId": "grammar.you_ni_narimashita", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜ようになりました", "instruction": "What kind of change does this describe?",
+          "options": [
+            { "id": "change", "label": "A new behavior or state has come to occur.", "correct": true },
+            { "id": "wish", "label": "The speaker merely wishes it would occur.", "correct": false },
+            { "id": "ban", "label": "The behavior has been prohibited.", "correct": false }
+          ],
+          "answer": { "ja": "〜ようになりました", "reading": "〜ように なりました", "meaning": "It has come to be the case that…", "note": "It describes a change over time, such as people beginning to ask questions." }
+        },
+        {
+          "id": "grammar.te-kurenai.focus", "skillId": "grammar.te_kurenai", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜てくれない？", "instruction": "What register and request does this express?",
+          "options": [
+            { "id": "casual-favor", "label": "A casual request: could you do it for me?", "correct": true },
+            { "id": "formal", "label": "A formal request to a customer.", "correct": false },
+            { "id": "refusal", "label": "A statement that the other person will not help.", "correct": false }
+          ],
+          "answer": { "ja": "〜てくれない？", "reading": "〜てくれない？", "meaning": "Could you do this for me?", "note": "Warm and casual; use a more polite pattern with someone socially distant." }
+        },
+        {
+          "id": "grammar.arimasuka.focus", "skillId": "grammar.arimasuka", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜はありますか", "instruction": "What availability question does this ask?",
+          "options": [
+            { "id": "have", "label": "Do you have it / is it available?", "correct": true },
+            { "id": "where", "label": "Where exactly is it located?", "correct": false },
+            { "id": "price", "label": "How much does it cost?", "correct": false }
+          ],
+          "answer": { "ja": "〜はありますか", "reading": "〜は ありますか", "meaning": "Do you have it? / is there one?", "note": "Useful for asking whether a shop stocks a particular product." }
+        },
+        {
+          "id": "grammar.dake.focus", "skillId": "grammar.dake", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "〜だけです", "instruction": "What boundary does だけ set?",
+          "options": [
+            { "id": "just", "label": "It is only / just that.", "correct": true },
+            { "id": "also", "label": "It is also that, among many required actions.", "correct": false },
+            { "id": "never", "label": "It is never that.", "correct": false }
+          ],
+          "answer": { "ja": "〜だけです", "reading": "〜だけです", "meaning": "It is only / just…", "note": "開くだけです means opening it is all that is required." }
+        },
+        {
+          "id": "pragmatic.accept-kindness.focus", "skillId": "pragmatic.accept_kindness", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "お言葉に甘えて", "instruction": "What social action does this phrase perform?",
+          "options": [
+            { "id": "accept", "label": "Gratefully accepts someone's kind offer.", "correct": true },
+            { "id": "reject", "label": "Firmly rejects the offer.", "correct": false },
+            { "id": "complain", "label": "Complains that the offer is insufficient.", "correct": false }
+          ],
+          "answer": { "ja": "お言葉に甘えて", "reading": "おことばに あまえて", "meaning": "Accepting your kind offer.", "note": "It acknowledges the other person's generosity while accepting." }
+        },
+        {
+          "id": "pragmatic.safe-birth.focus", "skillId": "pragmatic.safe_birth", "mode": "focus", "breakdownLeaf": true,
+          "prompt": "無事でありますように", "instruction": "Why is this careful before the outcome is known?",
+          "options": [
+            { "id": "wish-safety", "label": "It wishes for safety without announcing success prematurely.", "correct": true },
+            { "id": "confirmed", "label": "It confirms that everything has already ended safely.", "correct": false },
+            { "id": "congratulates", "label": "It gives full congratulations for a completed birth.", "correct": false }
+          ],
+          "answer": { "ja": "無事でありますように", "reading": "ぶじで ありますように", "meaning": "May everything be safe.", "note": "Use the wish while the birth or another uncertain event is still underway." }
         }
       ]
     },

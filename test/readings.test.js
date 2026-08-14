@@ -6,6 +6,7 @@ import { probabilityKnown } from "../src/mastery.js";
 import {
   augmentTreeWithReadings,
   createReadingItems,
+  itemTestsReading,
   readingIsReady,
   readingEntriesIn,
   readingSkillId,
@@ -79,11 +80,28 @@ test("every ruby entry generates an objective reading card and BKT skill", async
     const item = items[index];
     assert.equal(item.prompt, entry.term);
     assert.equal(item.mode, "reading");
+    assert.equal(itemTestsReading(item), true);
+    assert.match(item.instruction, /hiragana/);
     assert.equal(item.options.length, 3);
     assert.equal(item.options.filter((option) => option.correct).length, 1);
     assert.ok(nodeIds.has(readingSkillId(entry)), `Missing BKT node for ${entry.term}`);
     assert.notEqual(readingSkillId(entry), entry.skillId, `${entry.term} reading must not share phrase BKT`);
   }
+});
+
+test("cards that ask for pronunciation explicitly suppress prompt furigana", async () => {
+  const content = await readJson("../data/scenarios.json");
+  const byId = new Map(content.scenarios.flatMap((scenario) => scenario.items).map((item) => [item.id, item]));
+  const pronunciationCards = [
+    "nav.address.reply",
+    "geo.miyazaki.address.reply",
+    "geo.miyazaki.cities.reply"
+  ];
+
+  for (const id of pronunciationCards) {
+    assert.equal(itemTestsReading(byId.get(id)), true, `${id} must not reveal its reading in prompt ruby`);
+  }
+  assert.equal(itemTestsReading(byId.get("visit.nenki.meaning")), false, "meaning-only focus keeps adaptive furigana");
 });
 
 test("phrase and mission evidence cannot retire a reading's furigana", async () => {
