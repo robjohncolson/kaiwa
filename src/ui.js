@@ -1,5 +1,15 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import {
+  abandonBreakdown,
+  archiveCompletedBreakdown,
+  beginBreakdownRevisit,
+  breakdownProgress,
+  buildBreakdownSession,
+  currentBreakdownCard,
+  recordBreakdownComponent,
+  recordBreakdownRetry
+} from "./breakdown.js";
+import {
   advanceMissionRun,
   answerMissionStep,
   createMissionRun,
@@ -26,6 +36,7 @@ import {
 import { getRoleplayConfig, requestRoleplay } from "./providers/llm.js";
 import {
   augmentTreeWithReadings,
+  itemTestsReading,
   readingIsReady,
   readingSkillId,
   tokenizeReadings
@@ -152,6 +163,7 @@ function appendProviderParts(target, parts) {
 
 function screenHeading(kicker, title, copy = "") {
   dom.screen.replaceChildren();
+  delete dom.screen.dataset.itemId;
   dom.screen.append(element("p", "screen-kicker", kicker));
   dom.screen.append(element("h2", "screen-title", title));
   if (copy) dom.screen.append(element("p", "screen-copy", copy));
@@ -257,6 +269,16 @@ function repairSession() {
   return state.repair?.active ?? null;
 }
 
+function breakdownSession() {
+  return state.breakdown?.active ?? null;
+}
+
+function breakdownSourceItem(session = breakdownSession()) {
+  if (!session) return null;
+  return items.find((item) => item.id === session.sourceItemId)
+    ?? (repairSession()?.recognitionCard?.id === session.sourceItemId ? repairSession().recognitionCard : null);
+}
+
 function missionForId(id) {
   const repair = repairSession();
   if (repair?.mission?.id === id) return repair.mission;
@@ -292,6 +314,22 @@ function sessionIsValid(session) {
   return Boolean(missionById(missionPack, session.missionId));
 }
 
+function breakdownIsValid(session) {
+  if (!session) return true;
+  if (!new Set(["components", "retry", "waiting", "revisit", "complete"]).has(session.phase)) return false;
+  if (!new Set(["integration", "revisit"]).has(session.round)) return false;
+  if (!breakdownSourceItem(session)) return false;
+  if (!Array.isArray(session.componentIds) || !Array.isArray(session.deferredIds) || !Array.isArray(session.queue)) return false;
+  if (!Array.isArray(session.diagnosis?.skillIds)) return false;
+  if (session.phase === "waiting" && !Number.isFinite(session.revisitAt)) return false;
+  if (!session.componentIds.every((id) => items.some((item) => item.id === id))) return false;
+  if (!session.deferredIds.every((id) => items.some((item) => item.id === id) && !session.componentIds.includes(id))) return false;
+  if (!session.queue.every((id) => session.componentIds.includes(id))) return false;
+  return Number.isInteger(session.queueIndex)
+    && session.queueIndex >= 0
+    && session.queueIndex <= session.queue.length;
+}
+
 function repairActivityState() {
   let changed = false;
   if (!repairIsValid(state.repair?.active)) {
@@ -306,10 +344,15 @@ function repairActivityState() {
     state = { ...state, session: { ...state.session, active: null } };
     changed = true;
   }
+  if (!breakdownIsValid(state.breakdown?.active)) {
+    state = { ...state, breakdown: { ...state.breakdown, active: null } };
+    changed = true;
+  }
   if (changed) save();
 }
 
 function primaryPracticeLabel() {
+  if (breakdownSession()) return "Resume breakdown";
   const repair = repairSession();
   if (repair && repair.phase !== "complete") return "Resume repair";
   if (state.mission.active) return "Resume mission";
@@ -341,6 +384,7 @@ function renderHome() {
 }
 
 function resumePractice() {
+  if (breakdownSession()) return show("breakdown-overview");
   const repair = repairSession();
   if (repair && repair.phase !== "complete") {
     if (repair.phase === "cards") return showCard("repair");
@@ -429,14 +473,51 @@ function chooseScenario(flow, scenario) {
   if (flow === "roleplay") return show("roleplay-line", { scenarioId: scenario.id, index: 0 });
 }
 
+function breakdownCardReason(active, item) {
+  if (active.phase === "retry") {
+    return "Immediate integration check · component evidence cannot pass the complete phrase";
+  }
+  if (active.phase === "revisit") {
+    return "Delayed reconsolidation check · retrieve the complete phrase after a real gap";
+  }
+  const evidence = active.selectionEvidence?.[item.id];
+  const relationship = active.relationships?.[item.id] ?? "component";
+  const labels = {
+    diagnosed: "selected distractor points here",
+    explicit: "authored component",
+    grammar: "grammar pattern",
+    pragmatic: "social meaning",
+    decomposition: "phrase component",
+    prerequisite: "direct prerequisite",
+    reading: "contextual reading",
+    foundation: "foundation prerequisite"
+  };
+  const history = evidence?.attempts > 0
+    ? `${evidence.knownPercent}% BKT after ${evidence.attempts} check${evidence.attempts === 1 ? "" : "s"}`
+    : "not objectively checked yet";
+  const round = active.round === "revisit" ? "Delayed miss repair" : "Breakdown";
+  return `${round} · ${labels[relationship] ?? relationship} · ${history}`;
+}
+
 function showCard(context, explicitItemId = null) {
+  if (context !== "breakdown" && breakdownSession()) return show("breakdown-overview");
   let item;
-  if (context === "repair") item = currentRepairCard(repairSession(), items);
+  if (context === "breakdown") item = currentBreakdownCard(breakdownSession(), items, breakdownSourceItem());
+  else if (context === "repair") item = currentRepairCard(repairSession(), items);
   else if (context === "session") item = currentSessionCard(guidedSession(), items);
   else item = items.find((candidate) => candidate.id === explicitItemId) ?? selectNextItem(items, tree, state);
-  if (!item) return show("home");
-  if (cardUi?.itemId !== item.id) {
-    cardUi = { itemId: item.id, context, optionIndex: 0, rejectedCorrect: false, answered: false, correct: null };
+  if (!item) return context === "breakdown" ? show("breakdown-overview") : show("home");
+  if (screen.name !== "card" || cardUi?.itemId !== item.id) {
+    cardUi = {
+      itemId: item.id,
+      context,
+      optionIndex: 0,
+      rejectedCorrect: false,
+      answered: false,
+      correct: null,
+      selectedOptionId: null,
+      diagnosticSkillIds: []
+    };
   } else {
     cardUi.context = context;
   }
@@ -449,20 +530,39 @@ function renderCard() {
   if (!item) return show("home");
   const skill = state.skills[item.skillId];
   const context = screen.data.context;
-  const progress = context === "session"
+  const activeBreakdown = context === "breakdown" ? breakdownSession() : null;
+  const progress = context === "breakdown"
+    ? new Set(["retry", "revisit"]).has(activeBreakdown.phase)
+      ? activeBreakdown.phase === "revisit"
+        ? "delayed whole-card recall"
+        : `whole-card retry ${activeBreakdown.retryOutcomes.length + 1}`
+      : `part ${activeBreakdown.queueIndex + 1} of ${activeBreakdown.queue.length}`
+    : context === "session"
     ? `${guidedSession().outcomes.length} of ${guidedSession().cardIds.length}`
     : context === "repair"
       ? `${repairSession().outcomes.length} of ${repairSession().cardIds.length}`
       : "scheduler selected";
-  screenHeading(item.scenarioTitle, "Read the Japanese first.", item.instruction);
-  setChrome({ title: "Is this the answer?", context: `${progress} · ${Math.round(probabilityKnown(skill) * 100)}% BKT`, progress: cardUi.answered ? 0.72 : 0.52 });
+  const isReadingCard = itemTestsReading(item);
+  screenHeading(
+    item.scenarioTitle,
+    isReadingCard ? "Match the word to its reading." : "Read the Japanese first.",
+    item.instruction
+  );
+  dom.screen.dataset.itemId = item.id;
+  setChrome({
+    title: isReadingCard ? "Does this reading match?" : "Is this the answer?",
+    context: `${progress} · ${Math.round(probabilityKnown(skill) * 100)}% BKT`,
+    progress: cardUi.answered ? 0.72 : 0.52
+  });
 
   const prompt = element("p", "prompt-japanese");
-  appendJapanese(prompt, item.prompt, { neverShow: item.mode === "reading" });
+  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard });
   dom.screen.append(prompt);
-  addMeta(item.mode === "reading" ? "No furigana test" : "Japanese → meaning", `${item.options.length} candidates`);
+  addMeta(isReadingCard ? "Written form → hiragana" : "Japanese → meaning", `${item.options.length} candidates`);
   const reason = context === "repair"
     ? "Field repair · recent conversation friction"
+    : context === "breakdown"
+      ? breakdownCardReason(activeBreakdown, item)
     : context === "session"
       ? `Guided plan · ${schedulerReason(state, item)}`
       : schedulerReason(state, item);
@@ -473,8 +573,13 @@ function renderCard() {
   if (!cardUi.answered) {
     const option = item.options[cardUi.optionIndex];
     const candidate = element("article", "candidate-card");
-    candidate.append(element("p", "candidate-label", `Candidate ${cardUi.optionIndex + 1} of ${item.options.length}`));
-    const label = element("p", "candidate-text");
+    candidate.dataset.optionId = option.id;
+    candidate.append(element(
+      "p",
+      "candidate-label",
+      `${isReadingCard ? "Possible reading" : "Candidate"} ${cardUi.optionIndex + 1} of ${item.options.length}`
+    ));
+    const label = element("p", `candidate-text${isReadingCard ? " candidate-japanese" : ""}`);
     appendJapanese(label, option.label, { alwaysShow: true });
     candidate.append(label);
     dom.screen.append(candidate);
@@ -489,7 +594,7 @@ function renderCard() {
   result.dataset.result = cardUi.correct ? "correct" : "incorrect";
   result.append(element("p", "result-label", cardUi.correct ? "Correct" : "Review this one"));
   const japanese = element("p", "line-japanese");
-  appendJapanese(japanese, item.answer.ja, { alwaysShow: true });
+  appendJapanese(japanese, item.answer.ja, isReadingCard ? { neverShow: true } : { alwaysShow: true });
   result.append(japanese);
   if (item.answer.reading) result.append(element("p", "answer-reading", item.answer.reading));
   const meaning = element("p", "line-meaning");
@@ -499,6 +604,15 @@ function renderCard() {
     const note = element("p", "screen-copy");
     appendJapanese(note, item.answer.note, { alwaysShow: true });
     result.append(note);
+  }
+  if (!cardUi.correct && cardUi.selectedOptionId && cardUi.diagnosticSkillIds.length > 0) {
+    const diagnosis = element("aside", "word-zoom");
+    diagnosis.append(element("h3", "", "WHAT THAT ANSWER SUGGESTS"));
+    const labels = cardUi.diagnosticSkillIds.map((skillId) =>
+      tree.nodes.find((node) => node.id === skillId)?.label ?? skillId
+    );
+    diagnosis.append(element("p", "screen-copy", `The selected answer points to: ${labels.join(" · ")}. Those nodes move to the front of this breakdown.`));
+    result.append(diagnosis);
   }
   if (item.zoom) {
     const zoom = element("aside", "word-zoom");
@@ -511,7 +625,9 @@ function renderCard() {
     result.append(zoom);
   }
   dom.screen.append(result);
-  const left = context === "repair"
+  const left = breakdownSession()
+    ? { label: "Pause", onClick: () => show("home") }
+    : context === "repair"
     ? { label: "End repair", onClick: confirmEndRepair }
     : context === "session"
       ? { label: "End session", onClick: confirmEndSession }
@@ -520,6 +636,11 @@ function renderCard() {
 }
 
 function answerCardCandidate(item, accepted) {
+  const option = item.options[cardUi.optionIndex];
+  if (accepted && !option.correct) {
+    cardUi.selectedOptionId = option.id;
+    cardUi.diagnosticSkillIds = [...(option.diagnosticSkillIds ?? [])];
+  }
   const result = candidateAnswer({
     options: item.options,
     index: cardUi.optionIndex,
@@ -538,21 +659,54 @@ function answerCardCandidate(item, accepted) {
 }
 
 function applyCardResult(item, correct, now = Date.now()) {
+  const context = cardUi.context;
   const repair = repairSession();
   const repairItem = currentRepairCard(repair, items);
   const session = guidedSession();
   const sessionItem = currentSessionCard(session, items);
   state = applyObservation(state, item, correct, now);
+  if (context === "breakdown") {
+    const active = breakdownSession();
+    const updated = active.phase === "components"
+      ? recordBreakdownComponent(active, item, correct, now)
+      : recordBreakdownRetry(active, item, correct, now);
+    state = { ...state, breakdown: { ...state.breakdown, active: updated } };
+    save();
+    return;
+  }
   if (repairItem?.id === item.id) {
     state = { ...state, repair: { ...state.repair, active: recordRepairCard(repair, item, correct, now) } };
   }
   if (sessionItem?.id === item.id) {
     state = { ...state, session: { ...state.session, active: recordSessionCard(session, item, correct, now) } };
   }
+  if (!correct) {
+    const active = buildBreakdownSession({
+      item,
+      items,
+      tree,
+      readings,
+      state,
+      diagnosticSkillIds: cardUi.diagnosticSkillIds,
+      selectedOptionId: cardUi.selectedOptionId,
+      returnContext: context,
+      now
+    });
+    state = { ...state, breakdown: { ...state.breakdown, active } };
+  }
   save();
 }
 
 function nextCardLabel(context) {
+  const active = breakdownSession();
+  if (context !== "breakdown" && active) return "Break it down";
+  if (context === "breakdown") {
+    if (active?.phase === "complete") return "Finish breakdown";
+    if (active?.phase === "retry") return "Retry whole card";
+    if (active?.phase === "waiting") return "Schedule revisit";
+    if (active?.phase === "revisit") return "Finish delayed check";
+    return "Next part";
+  }
   if (context === "repair" && repairSession()?.phase === "mission") return "Speak next";
   if (context === "session" && guidedSession()?.phase === "mission") return "Speak next";
   return "Next card";
@@ -560,6 +714,11 @@ function nextCardLabel(context) {
 
 function continueAfterCard(context) {
   cardUi = null;
+  if (context !== "breakdown" && breakdownSession()) return show("breakdown-overview");
+  if (context === "breakdown") {
+    if (breakdownSession()?.phase === "components") return showCard("breakdown");
+    return show("breakdown-overview");
+  }
   if (context === "repair") {
     return repairSession()?.phase === "cards" ? showCard("repair") : show("repair-overview");
   }
@@ -567,6 +726,162 @@ function continueAfterCard(context) {
     return guidedSession()?.phase === "cards" ? showCard("session") : show("session-overview");
   }
   showCard("solo");
+}
+
+function renderBreakdownOverview() {
+  const active = breakdownSession();
+  if (!active) return resumeAfterBreakdownContext("solo");
+  const source = breakdownSourceItem(active);
+  if (!source) return show("home");
+  const progress = breakdownProgress(active);
+  const title = {
+    components: active.round === "revisit" ? "Repair what slipped." : "Learn the parts.",
+    retry: "Put it back together.",
+    waiting: "Let it settle.",
+    revisit: "Retrieve it later.",
+    complete: "Connection held."
+  }[active.phase];
+  const copy = active.phase === "components"
+    ? active.round === "revisit"
+      ? "The delayed whole-phrase miss reopened the most relevant nodes. Clean them, then try the phrase again."
+      : "The miss has been traced into weak grammar, pragmatic, prerequisite, and reading nodes. A selected distractor is promoted when it identifies a specific confusion."
+    : active.phase === "retry"
+      ? progress.atomic
+        ? "This is an honest atomic leaf: study its correction, then retrieve the whole card without invented subskills."
+        : "The targeted parts are clean, but their evidence cannot mark the parent mastered. Retrieve the complete phrase now."
+      : active.phase === "waiting"
+        ? breakdownWaitText(active)
+        : active.phase === "revisit"
+          ? "The gap is complete. Retrieve the untouched whole phrase once more; this is the check that closes the loop."
+          : "The components, immediate integration, and delayed whole-phrase recall all have independent evidence.";
+  screenHeading("CARD BREAKDOWN", title, copy);
+  setChrome({
+    title: source.scenarioTitle,
+    context: active.phase === "complete" ? "Breakdown complete" : `Breakdown · ${progress.correctComponents}/${progress.componentTotal} parts`,
+    progress: { components: 0.45, retry: 0.65, waiting: 0.78, revisit: 0.9, complete: 1 }[active.phase]
+  });
+
+  const sourceCard = addDataCard("MISSED WHOLE CARD");
+  const japanese = element("p", "candidate-text candidate-japanese");
+  const studyMode = active.phase === "components";
+  appendJapanese(
+    japanese,
+    studyMode ? source.answer?.ja ?? source.prompt : source.prompt,
+    studyMode ? { alwaysShow: true } : itemTestsReading(source) ? { neverShow: true } : {}
+  );
+  sourceCard.append(japanese);
+  if (active.phase === "components" && source.answer?.meaning) {
+    sourceCard.append(element("p", "line-meaning", source.answer.meaning));
+  }
+  addMeta(
+    progress.atomic ? "atomic leaf" : `${progress.componentTotal} targeted parts`,
+    `${progress.componentChecks} component checks`,
+    `${progress.retries} whole retries`,
+    active.diagnosis?.skillIds?.length ? "answer-specific diagnosis" : "graph diagnosis",
+    active.deferredCount ? `${active.deferredCount} lower-priority nodes deferred` : null
+  );
+
+  const stages = element("ol", "stage-list");
+  const integrationDone = Number.isFinite(active.integrationPassedAt);
+  const delayedStarted = active.round === "revisit" || new Set(["revisit", "complete"]).has(active.phase);
+  stages.append(
+    element("li", active.phase === "components" && active.round === "integration" ? "current" : integrationDone ? "done" : active.phase === "retry" ? "done" : "", progress.atomic ? "Study the atomic correction" : "Diagnose and check targeted parts"),
+    element("li", active.phase === "retry" ? "current" : integrationDone ? "done" : "", "Retrieve the complete phrase now"),
+    element("li", active.phase === "waiting" ? "current" : delayedStarted ? "done" : "", "Leave a real ten-minute gap"),
+    element("li", active.phase === "revisit" || (active.phase === "components" && active.round === "revisit") ? "current" : active.phase === "complete" ? "done" : "", "Retrieve the complete phrase later")
+  );
+  dom.screen.append(stages);
+
+  let primary = active.phase === "components"
+    ? { label: active.queueIndex === 0 ? "Start parts" : "Continue parts", onClick: () => showCard("breakdown") }
+    : active.phase === "retry"
+      ? { label: "Retry whole card", onClick: () => showCard("breakdown") }
+      : active.phase === "revisit"
+        ? { label: "Start delayed check", onClick: () => showCard("breakdown") }
+        : active.phase === "complete"
+          ? { label: "Continue", onClick: completeBreakdown }
+          : null;
+  if (active.phase === "waiting") {
+    const due = active.revisitAt <= Date.now();
+    primary = {
+      label: due ? "Start delayed check" : "Not ready",
+      disabled: !due,
+      onClick: startBreakdownRevisit
+    };
+    startTicker(() => {
+      if (active.revisitAt <= Date.now()) render();
+      else {
+        const waitCopy = dom.screen.querySelector(".screen-copy");
+        if (waitCopy) waitCopy.textContent = breakdownWaitText(active);
+      }
+    });
+  }
+  setActions(
+    active.phase === "complete"
+      ? { label: "Home", onClick: () => show("home") }
+      : { label: "End breakdown", onClick: confirmEndBreakdown },
+    primary
+  );
+}
+
+function breakdownWaitText(active, now = Date.now()) {
+  const remaining = Math.max(0, active.revisitAt - now);
+  if (remaining === 0) return "The delayed whole-phrase recall is ready.";
+  const minutes = Math.floor(remaining / 60000);
+  const seconds = Math.ceil((remaining % 60000) / 1000);
+  return `Delayed recall in ${minutes}:${String(seconds).padStart(2, "0")}. The countdown survives refresh.`;
+}
+
+function startBreakdownRevisit() {
+  const active = breakdownSession();
+  if (!active || active.phase !== "waiting" || active.revisitAt > Date.now()) return;
+  state = {
+    ...state,
+    breakdown: { ...state.breakdown, active: beginBreakdownRevisit(active) }
+  };
+  save();
+  cardUi = null;
+  showCard("breakdown");
+}
+
+function resumeAfterBreakdownContext(context) {
+  if (context === "session") {
+    if (!guidedSession()) return show("home");
+    return guidedSession().phase === "cards" ? showCard("session") : show("session-overview");
+  }
+  if (context === "repair") {
+    if (!repairSession()) return show("home");
+    return repairSession().phase === "cards" ? showCard("repair") : show("repair-overview");
+  }
+  show("home");
+}
+
+function completeBreakdown() {
+  const active = breakdownSession();
+  if (!active || active.phase !== "complete") return show("home");
+  const context = active.returnContext;
+  state = { ...state, breakdown: archiveCompletedBreakdown(state.breakdown) };
+  save();
+  cardUi = null;
+  resumeAfterBreakdownContext(context);
+}
+
+function confirmEndBreakdown() {
+  show("confirm", {
+    kicker: "END BREAKDOWN",
+    title: "Stop before reconnecting the whole card?",
+    copy: "Every completed component check stays recorded, but this breakdown will be archived as unfinished.",
+    no: () => show("breakdown-overview"),
+    yes: endBreakdown
+  });
+}
+
+function endBreakdown() {
+  const context = breakdownSession()?.returnContext ?? "solo";
+  state = { ...state, breakdown: abandonBreakdown(state.breakdown) };
+  save();
+  cardUi = null;
+  resumeAfterBreakdownContext(context);
 }
 
 function renderSessionIntro() {
@@ -584,6 +899,7 @@ function renderSessionIntro() {
 }
 
 function startGuidedSession() {
+  if (breakdownSession()) return show("breakdown-overview");
   const repair = repairSession();
   if (repair && repair.phase !== "complete") return show("repair-overview");
   if (state.mission.active) return show("mission-turn");
@@ -755,6 +1071,7 @@ function renderFieldResult() {
 
 function startRepair(event = latestRepairOffer()) {
   if (!event) return show("home");
+  if (breakdownSession()) return show("breakdown-overview");
   if (guidedSession() && guidedSession().phase !== "complete") return show("session-overview");
   if (state.mission.active) return show("mission-turn");
   state = {
@@ -1666,6 +1983,7 @@ function render() {
     case "tools": return renderTools();
     case "scenario-chooser": return renderScenarioChooser();
     case "card": return renderCard();
+    case "breakdown-overview": return renderBreakdownOverview();
     case "session-intro": return renderSessionIntro();
     case "session-overview": return renderSessionOverview();
     case "session-summary": return renderSessionSummary();

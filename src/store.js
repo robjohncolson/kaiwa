@@ -1,6 +1,7 @@
 import { emptyProductionEvidence } from "./production.js";
 
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
+export const STATE_VERSION = 8;
 
 function bktDefaults(tree, node) {
   return {
@@ -36,7 +37,7 @@ function newSkillState(tree, node, now) {
 
 export function createInitialState(tree, now = Date.now()) {
   return {
-    version: 6,
+    version: STATE_VERSION,
     createdAt: now,
     updatedAt: now,
     totalReviews: 0,
@@ -47,10 +48,29 @@ export function createInitialState(tree, now = Date.now()) {
     mission: { active: null, stats: {} },
     session: { active: null, recent: [] },
     repair: { active: null, recent: [] },
+    breakdown: { active: null, recent: [] },
     field: { events: [] },
     skills: Object.fromEntries(
       tree.nodes.map((node) => [node.id, newSkillState(tree, node, now)])
     )
+  };
+}
+
+function mergeBreakdown(savedBreakdown) {
+  const active = savedBreakdown?.active;
+  return {
+    active: active ? {
+      ...active,
+      diagnosis: { selectedOptionId: null, skillIds: [], ...active.diagnosis },
+      relationships: active.relationships ?? {},
+      skillIdsByItem: active.skillIdsByItem ?? {},
+      selectionEvidence: active.selectionEvidence ?? {},
+      round: active.round ?? "integration",
+      integrationPassedAt: active.integrationPassedAt ?? null,
+      revisitAt: active.revisitAt ?? null,
+      revisitOutcome: active.revisitOutcome ?? null
+    } : null,
+    recent: Array.isArray(savedBreakdown?.recent) ? savedBreakdown.recent.slice(-20) : []
   };
 }
 
@@ -102,14 +122,14 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4, 5, 6].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
   return {
     ...initial,
     ...candidate,
-    version: 6,
+    version: STATE_VERSION,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
     mission: {
@@ -129,6 +149,7 @@ function mergeWithCurrentTree(candidate, tree, now) {
       active: candidate.repair?.active ?? null,
       recent: Array.isArray(candidate.repair?.recent) ? candidate.repair.recent.slice(-20) : []
     },
+    breakdown: mergeBreakdown(candidate.breakdown),
     field: {
       events: Array.isArray(candidate.field?.events) ? candidate.field.events.slice(-100) : []
     },
@@ -179,7 +200,7 @@ export function previewProgressBackup(raw, tree, now = Date.now()) {
   if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4, 5, 6].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (![1, 2, 3, 4, 5, 6, 7, 8].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   return {

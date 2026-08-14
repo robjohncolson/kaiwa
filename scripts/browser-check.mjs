@@ -250,9 +250,36 @@ async function run() {
       check(await title() === toolTitle, `tool wizard reaches ${toolTitle}`);
       await click("Open");
     };
+    const candidateIsCorrect = () => js(`(async () => {
+      if (!window.__kaiwaItemIndex) {
+        window.__kaiwaItemIndex = Promise.all([
+          fetch("./data/scenarios.json").then(response => response.json()),
+          fetch("./data/readings.json").then(response => response.json()),
+          import("./src/scheduler.js")
+        ]).then(([content, readings, scheduler]) => scheduler.flattenItems(content, readings));
+      }
+      const itemId = document.querySelector("#wizard-screen")?.dataset.itemId;
+      const optionId = document.querySelector(".candidate-card")?.dataset.optionId;
+      const saved = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)}) || "null");
+      const dynamic = saved?.repair?.active?.recognitionCard;
+      const item = dynamic?.id === itemId ? dynamic : (await window.__kaiwaItemIndex).find(candidate => candidate.id === itemId);
+      return item?.options?.find(option => option.id === optionId)?.correct ?? null;
+    })()`);
+    const answerCard = async (correct) => {
+      for (let candidate = 0; candidate < 4; candidate += 1) {
+        const candidateCorrect = await candidateIsCorrect();
+        if (candidateCorrect == null) throw new Error("Could not resolve the active card candidate.");
+        if (candidateCorrect === correct) {
+          await click("Yes");
+          return;
+        }
+        await click("No");
+      }
+      throw new Error(`Could not select a ${correct ? "correct" : "wrong"} card candidate.`);
+    };
     const finishCard = async () => {
       check(Boolean(await js(`document.querySelector(".practice-reason")?.textContent.includes("WHY THIS CARD")`)), "practice card explains why it was selected");
-      await click("Yes");
+      await answerCard(true);
       check(Boolean(await js(`document.querySelector(".practice-reason")`)), "selection reason remains visible with feedback");
       const next = (await actions()).find((button) => !button.disabled && ["Next card", "Speak next"].includes(button.label));
       if (!next) throw new Error("Card feedback has no forward action.");
@@ -312,10 +339,91 @@ async function run() {
     await click("Restore");
     check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).totalReviews`) === 321, "Restore applies the previewed state only after confirmation");
 
+    // Composite place-reading cards must not inherit adaptive prompt furigana.
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: "miyazaki-readings", skillId: "geo.miyazaki_address", mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Menu"), "Home did not return for the place-reading check");
+    await navigateTool("One quick card");
+    check(await js(`["児湯郡", "新富町", "三納代"].every(term => [...document.querySelectorAll(".prompt-japanese ruby > span")].some(node => node.textContent === term))`), "focused check opens the Miyazaki address-reading card");
+    check(await js(`[...document.querySelectorAll(".prompt-japanese rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "Miyazaki address prompt does not reveal its readings");
+    await answerCard(true);
+    check(await js(`[...document.querySelectorAll(".result-card .line-japanese rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "place-reading correction does not duplicate ruby above the answer");
+    check((await js(`document.querySelector(".result-card .answer-reading")?.textContent || ""`)).trim() === "こゆぐん しんとみちょう みなしろ", "place-reading correction shows one explicit reading line");
+    await click("Home");
+
+    // A normal card miss opens a persisted component -> integration cycle.
+    await navigateTool("One quick card");
+    await answerCard(false);
+    check(Boolean(await js(`document.querySelector(".result-card")?.textContent.includes("WHAT THAT ANSWER SUGGESTS")`)), "a diagnosed distractor explains which nodes it implicates");
+    check(await actionLabel("Break it down"), "a wrong whole-card answer offers decomposition");
+    await click("Break it down");
+    check(await title() === "Learn the parts.", "the breakdown explains its component phase");
+    await layout("390x844 breakdown overview");
+    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.componentIds.length`) === 5, "the Miyazaki phrase activates five contextual reading nodes");
+    await click("Start parts");
+    await answerCard(false);
+    check(await actionLabel("Next part"), "a missed component remains inside the breakdown");
+    await click("Next part");
+    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.queue.length`) === 6, "a missed component is requeued for another clean check");
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Resume breakdown"), "Active card breakdown did not survive refresh");
+    await click("Resume breakdown");
+    check(await title() === "Learn the parts.", "refresh returns to the active component phase");
+    await click("Continue parts");
+    for (let part = 0; part < 10; part += 1) {
+      await answerCard(true);
+      if (await actionLabel("Next part")) {
+        await click("Next part");
+        continue;
+      }
+      if (await actionLabel("Retry whole card")) {
+        await click("Retry whole card");
+        break;
+      }
+      throw new Error("Breakdown component feedback has no forward action.");
+    }
+    check(await title() === "Put it back together.", "clean components lead to the integration phase");
+    await click("Retry whole card");
+    await answerCard(true);
+    check(await actionLabel("Schedule revisit"), "a clean immediate retry schedules delayed reconsolidation");
+    await click("Schedule revisit");
+    check(await title() === "Let it settle.", "the breakdown enters a real ten-minute gap");
+    check(await actionLabel("Not ready"), "the delayed whole-card check cannot run immediately");
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Resume breakdown"), "Waiting breakdown did not survive refresh");
+    await click("Resume breakdown");
+    check(await actionLabel("Not ready"), "refresh preserves the not-yet-due breakdown revisit");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.breakdown.active.revisitAt = Date.now() - 1; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Resume breakdown"), "Due breakdown did not load");
+    await click("Resume breakdown");
+    await click("Start delayed check");
+    await answerCard(true);
+    check(await actionLabel("Finish breakdown"), "a clean delayed parent recall closes the evidence loop");
+    await click("Finish breakdown");
+    check(await title() === "Connection held.", "breakdown reaches a delayed-recall summary");
+    await layout("390x844 breakdown complete");
+    const breakdownEvidence = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); return { parent: state.skills["geo.miyazaki_address"], components: state.breakdown.active.componentSkillIds.map(id => state.skills[id]) }; })()`);
+    check(breakdownEvidence.parent.incorrect >= 1 && breakdownEvidence.parent.correct >= 2, "parent BKT records the miss and its own clean retry");
+    check(breakdownEvidence.components.every(skill => skill.correct >= 1), "each selected component records independent clean evidence");
+    await click("Continue");
+    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.recent.length`) >= 1, "completed breakdown is archived locally");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: null, mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Start practice"), "Home did not return after the place-reading check");
+
     // Full guided loop at a common modern phone size.
     await click("Start practice");
     await click("Start");
-    for (let card = 0; card < 6; card += 1) await finishCard();
+    for (let card = 0; card < 6; card += 1) {
+      if (card === 3) {
+        check(await title() === "Match the word to its reading.", "reading card explains the task");
+        check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Written form → hiragana")`)), "reading card names the written-form to hiragana mapping");
+        check(Boolean(await js(`document.querySelector(".candidate-card .candidate-label")?.textContent.includes("Possible reading")`)), "hiragana option is labeled as a possible reading");
+        check(await js(`[...document.querySelectorAll(".prompt-japanese rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "reading prompt does not reveal its furigana");
+      }
+      await finishCard();
+    }
     check(await title() === "Cards complete. Speak now.", "guided cards advance into the spoken loop");
     await click("Start mission");
     await finishProductionMission();
