@@ -32,7 +32,7 @@ async function fixtures() {
   return { content, tree, readings, missionPack, items };
 }
 
-test("a guided session deterministically queues phrases, readings, and a route-relevant mission", async () => {
+test("a guided session queues phrases, three distinct word facets, and a route-relevant mission", async () => {
   const { tree, readings, missionPack, items } = await fixtures();
   const state = createInitialState(tree, NOW);
   state.route = { scenarioId: "family-visit", eventAt: NOW + 30 * 60 * 1000 };
@@ -42,7 +42,8 @@ test("a guided session deterministically queues phrases, readings, and a route-r
   assert.equal(session.targetMinutes, 5);
   assert.equal(session.cardIds.length, 6);
   assert.ok(queued.slice(0, 3).every((item) => ["meaning", "reply"].includes(item.mode)));
-  assert.ok(queued.slice(3).every((item) => item.mode === "reading"));
+  assert.deepEqual(queued.slice(3).map((item) => item.mode), ["reading", "word-form", "word-meaning"]);
+  assert.equal(session.facetSkillIds.length, 3);
   assert.equal(session.missionId, "family-visit-loop");
 });
 
@@ -63,7 +64,7 @@ test("guided card progress is bounded, ordered, and resumable", async () => {
   assert.throws(() => recordSessionCard(session, items[0], true), /No guided card/);
 });
 
-test("session summary reports honest furigana retirement and weak phrases", async () => {
+test("session summary reports independent facet readiness and furigana retirement", async () => {
   const { tree, readings, missionPack, items } = await fixtures();
   const state = createInitialState(tree, NOW);
   let session = buildGuidedSession({ items, tree, readings, missionPack, state, now: NOW });
@@ -83,8 +84,11 @@ test("session summary reports honest furigana retirement and weak phrases", asyn
   const summary = summarizeGuidedSession(session, { state, tree, readings, items });
   assert.equal(summary.cardsCompleted, 6);
   assert.equal(summary.missionOutcome, "clean");
+  assert.equal(summary.facetTotal, 3);
+  assert.equal(summary.facetCorrect, 3);
   assert.equal(summary.newlyRetiredReadings.length, 1);
-  assert.equal(summary.needsFurigana.length, 2);
+  assert.equal(summary.needsFurigana.length, 0);
+  assert.equal(summary.weakestFacets.length, 2);
 
   const archived = archiveCompletedSession({ active: session, recent: [] });
   assert.equal(archived.active, null);

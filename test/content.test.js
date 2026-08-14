@@ -82,7 +82,12 @@ test("distractor diagnoses reference real component skills", async () => {
   ]);
   const nodeIds = new Set([
     ...tree.nodes.map((node) => node.id),
-    ...readings.entries.map((entry) => `reading.${entry.id}`)
+    ...readings.entries.flatMap((entry) => [
+      `reading.${entry.id}`,
+      `word-form.${entry.id}`,
+      `word-meaning.${entry.id}`,
+      `word-recall.${entry.id}`
+    ])
   ]);
   let diagnosed = 0;
   for (const item of content.scenarios.flatMap((scenario) => scenario.items)) {

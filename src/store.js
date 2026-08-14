@@ -1,7 +1,7 @@
 import { emptyProductionEvidence } from "./production.js";
 
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
-export const STATE_VERSION = 9;
+export const STATE_VERSION = 10;
 
 function bktDefaults(tree, node) {
   return {
@@ -128,7 +128,7 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
@@ -148,7 +148,18 @@ function mergeWithCurrentTree(candidate, tree, now) {
       stats: { ...initial.mission.stats, ...candidate.mission?.stats }
     },
     session: {
-      active: candidate.session?.active ?? null,
+      active: candidate.session?.active ? {
+        ...candidate.session.active,
+        facetSkillIds: candidate.session.active.facetSkillIds
+          ?? candidate.session.active.readingSkillIds
+          ?? [],
+        baseline: {
+          ...candidate.session.active.baseline,
+          facetReadySkillIds: candidate.session.active.baseline?.facetReadySkillIds
+            ?? candidate.session.active.baseline?.readingReadySkillIds
+            ?? []
+        }
+      } : null,
       recent: Array.isArray(candidate.session?.recent) ? candidate.session.recent.slice(-10) : []
     },
     repair: {
@@ -206,7 +217,7 @@ export function previewProgressBackup(raw, tree, now = Date.now()) {
   if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   return {

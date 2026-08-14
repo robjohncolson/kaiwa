@@ -15,6 +15,27 @@ export function readingCharacterSkillId(entry, index) {
   return `reading-character.${entry.id}.${index}`;
 }
 
+export function wordFormSkillId(entry) {
+  return `word-form.${entry.id}`;
+}
+
+export function wordMeaningSkillId(entry) {
+  return `word-meaning.${entry.id}`;
+}
+
+export function wordRecallSkillId(entry) {
+  return `word-recall.${entry.id}`;
+}
+
+export function wordFacetSkillIds(entry) {
+  return [
+    readingSkillId(entry),
+    wordFormSkillId(entry),
+    wordMeaningSkillId(entry),
+    wordRecallSkillId(entry)
+  ];
+}
+
 export function kanjiCharacters(value) {
   return [...String(value ?? "")].filter((character) => HAN.test(character));
 }
@@ -27,27 +48,35 @@ export function augmentTreeWithReadings(tree, readings) {
   const existing = new Set(tree.nodes.map((node) => node.id));
   const generated = [];
   const decompositions = [...(tree.decompositions ?? [])];
-  for (const entry of readings.entries) {
-    const id = readingSkillId(entry);
-    if (!existing.has(id)) {
-      existing.add(id);
-      generated.push({ id, label: `${entry.term} · ${entry.reading}`, kind: "reading" });
+  const addNode = (id, label, kind) => {
+    if (existing.has(id)) return;
+    existing.add(id);
+    generated.push({ id, label, kind });
+  };
+  const addDecomposition = (from, to) => {
+    if (!decompositions.some((edge) => edge.from === from && edge.to === to)) {
+      decompositions.push({ from, to });
     }
+  };
+  for (const entry of readings.entries) {
+    const readingId = readingSkillId(entry);
+    const formId = wordFormSkillId(entry);
+    const meaningId = wordMeaningSkillId(entry);
+    const recallId = wordRecallSkillId(entry);
+    addNode(readingId, `${entry.term} · ${entry.reading}`, "reading");
+    addNode(formId, `${entry.reading} → ${entry.term}`, "written-form");
+    addNode(meaningId, `${entry.term} · ${entry.meaning}`, "meaning");
+    addNode(recallId, `${entry.meaning} → ${entry.term}`, "recall");
+    addDecomposition(readingId, recallId);
+    addDecomposition(formId, recallId);
+    addDecomposition(meaningId, recallId);
     const characters = kanjiCharacters(entry.term);
     if (characters.length < 2) continue;
     characters.forEach((character, index) => {
       const characterId = readingCharacterSkillId(entry, index);
-      if (!existing.has(characterId)) {
-        existing.add(characterId);
-        generated.push({
-          id: characterId,
-          label: `${character} in ${entry.term}`,
-          kind: "kanji"
-        });
-      }
-      if (!decompositions.some((edge) => edge.from === characterId && edge.to === id)) {
-        decompositions.push({ from: characterId, to: id });
-      }
+      addNode(characterId, `${character} in ${entry.term}`, "kanji");
+      addDecomposition(characterId, readingId);
+      addDecomposition(characterId, formId);
     });
   }
 
@@ -89,6 +118,8 @@ export function createReadingItems(readings, contentPack) {
       id: `reading-card.${entry.id}`,
       skillId: readingSkillId(entry),
       mode: "reading",
+      facet: "sound",
+      wordId: entry.id,
       testsReading: true,
       breakdownLeaf: kanjiCharacters(entry.term).length < 2,
       priority: entry.priority ?? 0.9,
@@ -109,6 +140,130 @@ export function createReadingItems(readings, contentPack) {
       scenarioTitle: scenario.title,
       scenarioPurpose: scenario.purpose
     };
+  });
+}
+
+function facetDistractors(entry, readings, labelFor, facet) {
+  const correctLabel = labelFor(entry);
+  const seenLabels = new Set([correctLabel]);
+  const selected = [];
+  const pools = [
+    readings.entries.filter((candidate) => candidate.id !== entry.id && candidate.scenarioId === entry.scenarioId),
+    readings.entries.filter((candidate) => candidate.id !== entry.id && candidate.scenarioId !== entry.scenarioId)
+  ];
+  for (const pool of pools) {
+    const start = pool.length > 0 ? hash(`${entry.id}.${facet}.${pool.length}`) % pool.length : 0;
+    for (let offset = 0; offset < pool.length && selected.length < 2; offset += 1) {
+      const candidate = pool[(start + offset) % pool.length];
+      const label = labelFor(candidate);
+      if (seenLabels.has(label)) continue;
+      seenLabels.add(label);
+      selected.push(candidate);
+    }
+    if (selected.length === 2) break;
+  }
+  return selected;
+}
+
+function facetOptions(entry, readings, { facet, labelFor, diagnosticFor }) {
+  const candidates = [entry, ...facetDistractors(entry, readings, labelFor, facet)];
+  if (candidates.length !== 3) throw new TypeError(`Not enough distinct ${facet} distractors for ${entry.id}.`);
+  const shift = hash(`${facet}.${entry.id}`) % candidates.length;
+  return candidates.map((_, index) => candidates[(index + shift) % candidates.length]).map((candidate, index) => ({
+    id: `${entry.id}.${facet}.${index}`,
+    label: labelFor(candidate),
+    correct: candidate.id === entry.id,
+    ...(candidate.id === entry.id ? {} : { diagnosticSkillIds: diagnosticFor(candidate) })
+  }));
+}
+
+export function createWordFacetItems(readings, contentPack) {
+  const scenarios = new Map(contentPack.scenarios.map((scenario) => [scenario.id, scenario]));
+  return readings.entries.flatMap((entry) => {
+    const scenario = scenarios.get(entry.scenarioId) ?? contentPack.scenarios[0];
+    const shared = {
+      wordId: entry.id,
+      scenarioId: scenario.id,
+      scenarioTitle: scenario.title,
+      scenarioPurpose: scenario.purpose
+    };
+    return [
+      {
+        ...shared,
+        id: `word-form-card.${entry.id}`,
+        skillId: wordFormSkillId(entry),
+        mode: "word-form",
+        facet: "written-form",
+        priority: (entry.priority ?? 0.9) * 0.8,
+        prompt: entry.reading,
+        instruction: "Choose the complete Japanese written form for this reading.",
+        options: facetOptions(entry, readings, {
+          facet: "written-form",
+          labelFor: (candidate) => candidate.term,
+          diagnosticFor: (candidate) => [readingSkillId(candidate)]
+        }),
+        answer: {
+          ja: entry.term,
+          reading: entry.reading,
+          meaning: entry.meaning,
+          note: "This written-form BKT is independent from recognizing the pronunciation."
+        },
+        zoom: {
+          context: entry.context ?? `${entry.term}（${entry.reading}）`,
+          breakdown: `Reading ${entry.reading} → written form ${entry.term}`
+        }
+      },
+      {
+        ...shared,
+        id: `word-meaning-card.${entry.id}`,
+        skillId: wordMeaningSkillId(entry),
+        mode: "word-meaning",
+        facet: "meaning-recognition",
+        priority: (entry.priority ?? 0.9) * 0.86,
+        prompt: entry.term,
+        instruction: "Choose the meaning of this Japanese word in the trip context.",
+        options: facetOptions(entry, readings, {
+          facet: "meaning-recognition",
+          labelFor: (candidate) => candidate.meaning,
+          diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)]
+        }),
+        answer: {
+          ja: entry.term,
+          reading: entry.reading,
+          meaning: entry.meaning,
+          note: "This meaning BKT is independent from reading the written form aloud."
+        },
+        zoom: {
+          context: entry.context ?? `${entry.term}（${entry.reading}）`,
+          breakdown: `${entry.term} → ${entry.meaning}`
+        }
+      },
+      {
+        ...shared,
+        id: `word-recall-card.${entry.id}`,
+        skillId: wordRecallSkillId(entry),
+        mode: "word-recall",
+        facet: "meaning-recall",
+        priority: (entry.priority ?? 0.9) * 0.74,
+        prompt: entry.meaning,
+        instruction: "Recall the Japanese word, then decide whether the candidate matches.",
+        options: facetOptions(entry, readings, {
+          facet: "meaning-recall",
+          labelFor: (candidate) => candidate.term,
+          diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)]
+        }),
+        answer: {
+          ja: entry.term,
+          reading: entry.reading,
+          meaning: entry.meaning,
+          note: "Recall combines meaning, sound, and written-form evidence without changing their separate BKT states."
+        },
+        zoom: {
+          context: entry.context ?? `${entry.term}（${entry.reading}）`,
+          breakdown: `${entry.meaning} → ${entry.term}（${entry.reading}）`
+        }
+      }
+    ];
   });
 }
 
@@ -157,6 +312,8 @@ export function createReadingCharacterItems(readings, contentPack) {
         id: `reading-character-card.${entry.id}.${index}`,
         skillId: readingCharacterSkillId(entry, index),
         mode: "kanji",
+        facet: "kanji-position",
+        wordId: entry.id,
         remediationOnly: true,
         breakdownLeaf: true,
         priority: entry.priority ?? 0.9,

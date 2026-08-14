@@ -4,8 +4,12 @@ import { isSkillUnlocked, scoreItem } from "./scheduler.js";
 import { fieldMultiplier } from "./field.js";
 
 export const GUIDED_PHRASE_COUNT = 3;
-export const GUIDED_READING_COUNT = 3;
+export const GUIDED_FACET_COUNT = 3;
 export const GUIDED_TARGET_MINUTES = 5;
+
+const WORD_FACET_MODES = new Set(["reading", "word-form", "word-meaning", "word-recall"]);
+const SEMANTIC_FACET_MODES = new Set(["word-meaning", "word-recall"]);
+const PHRASE_MODES = new Set(["meaning", "reply"]);
 
 function uniqueBySkill(items) {
   const seen = new Set();
@@ -18,17 +22,19 @@ function uniqueBySkill(items) {
 
 function rankedCards(items, tree, readings, state, now, mode) {
   return uniqueBySkill(items
-    .filter((item) => mode === "reading"
-      ? item.mode === "reading"
-      : ["meaning", "reply"].includes(item.mode))
+    .filter((item) => mode === "phrase"
+      ? PHRASE_MODES.has(item.mode)
+      : mode === "semantic"
+        ? SEMANTIC_FACET_MODES.has(item.mode)
+        : item.mode === mode)
     .filter((item) => isSkillUnlocked(tree, state.skills, item.skillId))
     .sort((a, b) => {
       const aSkill = state.skills[a.skillId];
       const bSkill = state.skills[b.skillId];
-      const aReady = mode === "reading"
+      const aReady = itemFacetIsReading(a)
         ? readingIsReady(readings, aSkill)
         : skillIsReady(tree, aSkill);
-      const bReady = mode === "reading"
+      const bReady = itemFacetIsReading(b)
         ? readingIsReady(readings, bSkill)
         : skillIsReady(tree, bSkill);
       const readiness = Number(aReady) - Number(bReady);
@@ -37,6 +43,16 @@ function rankedCards(items, tree, readings, state, now, mode) {
       if (score) return score;
       return probabilityKnown(aSkill) - probabilityKnown(bSkill) || a.id.localeCompare(b.id);
     }));
+}
+
+function itemFacetIsReading(item) {
+  return item?.mode === "reading";
+}
+
+function facetIsReady(item, tree, readings, state) {
+  return itemFacetIsReading(item)
+    ? readingIsReady(readings, state.skills[item.skillId])
+    : skillIsReady(tree, state.skills[item.skillId]);
 }
 
 function missionScore(mission, selectedItems, state, now) {
@@ -63,9 +79,12 @@ export function chooseGuidedMission(missionPack, selectedItems, state, now = Dat
 export function buildGuidedSession({ items, tree, readings, missionPack, state, now = Date.now() }) {
   const phrases = rankedCards(items, tree, readings, state, now, "phrase")
     .slice(0, GUIDED_PHRASE_COUNT);
-  const readingCards = rankedCards(items, tree, readings, state, now, "reading")
-    .slice(0, GUIDED_READING_COUNT);
-  const cards = [...phrases, ...readingCards];
+  const facetCards = [
+    rankedCards(items, tree, readings, state, now, "reading")[0],
+    rankedCards(items, tree, readings, state, now, "word-form")[0],
+    rankedCards(items, tree, readings, state, now, "semantic")[0]
+  ].filter(Boolean).slice(0, GUIDED_FACET_COUNT);
+  const cards = [...phrases, ...facetCards];
   const mission = chooseGuidedMission(missionPack, cards, state, now);
   if (cards.length === 0 || !mission) throw new TypeError("A guided session needs cards and a mission.");
 
@@ -76,15 +95,19 @@ export function buildGuidedSession({ items, tree, readings, missionPack, state, 
     phase: "cards",
     cardIds: cards.map((item) => item.id),
     phraseSkillIds: phrases.map((item) => item.skillId),
-    readingSkillIds: readingCards.map((item) => item.skillId),
+    facetSkillIds: facetCards.map((item) => item.skillId),
+    readingSkillIds: facetCards.filter(itemFacetIsReading).map((item) => item.skillId),
     missionId: mission.id,
     outcomes: [],
     baseline: {
       phraseReadySkillIds: phrases
         .filter((item) => skillIsReady(tree, state.skills[item.skillId]))
         .map((item) => item.skillId),
-      readingReadySkillIds: readingCards
-        .filter((item) => readingIsReady(readings, state.skills[item.skillId]))
+      facetReadySkillIds: facetCards
+        .filter((item) => facetIsReady(item, tree, readings, state))
+        .map((item) => item.skillId),
+      readingReadySkillIds: facetCards
+        .filter((item) => itemFacetIsReading(item) && readingIsReady(readings, state.skills[item.skillId]))
         .map((item) => item.skillId)
     },
     completedAt: null,
@@ -138,14 +161,17 @@ export function completeGuidedSession(session, missionRun, now = Date.now()) {
 export function summarizeGuidedSession(session, { state, tree, readings, items }) {
   if (!session) return null;
   const baselinePhrases = new Set(session.baseline?.phraseReadySkillIds ?? []);
+  const baselineFacets = new Set(session.baseline?.facetReadySkillIds ?? session.baseline?.readingReadySkillIds ?? []);
   const baselineReadings = new Set(session.baseline?.readingReadySkillIds ?? []);
   const phraseItems = session.phraseSkillIds.map((skillId) =>
     items.find((item) => item.skillId === skillId && item.mode !== "reading")
   ).filter(Boolean);
-  const readingItems = session.readingSkillIds.map((skillId) =>
-    items.find((item) => item.skillId === skillId && item.mode === "reading")
+  const facetItems = (session.facetSkillIds ?? session.readingSkillIds ?? []).map((skillId) =>
+    items.find((item) => item.skillId === skillId && WORD_FACET_MODES.has(item.mode))
   ).filter(Boolean);
+  const readingItems = facetItems.filter(itemFacetIsReading);
   const phraseReady = phraseItems.filter((item) => skillIsReady(tree, state.skills[item.skillId]));
+  const facetReady = facetItems.filter((item) => facetIsReady(item, tree, readings, state));
   const readingReady = readingItems.filter((item) => readingIsReady(readings, state.skills[item.skillId]));
   const weakestPhrases = phraseItems
     .filter((item) => !skillIsReady(tree, state.skills[item.skillId]))
@@ -154,8 +180,12 @@ export function summarizeGuidedSession(session, { state, tree, readings, items }
     .filter((item) => !readingIsReady(readings, state.skills[item.skillId]))
     .sort((a, b) => probabilityKnown(state.skills[a.skillId]) - probabilityKnown(state.skills[b.skillId]));
   const correctCards = session.outcomes.filter((outcome) => outcome.correct).length;
-  const phraseOutcomes = session.outcomes.filter((outcome) => outcome.mode !== "reading");
+  const phraseOutcomes = session.outcomes.filter((outcome) => PHRASE_MODES.has(outcome.mode));
   const readingOutcomes = session.outcomes.filter((outcome) => outcome.mode === "reading");
+  const facetOutcomes = session.outcomes.filter((outcome) => WORD_FACET_MODES.has(outcome.mode));
+  const weakestFacets = facetItems
+    .filter((item) => !facetIsReady(item, tree, readings, state))
+    .sort((a, b) => probabilityKnown(state.skills[a.skillId]) - probabilityKnown(state.skills[b.skillId]));
 
   return {
     cardsCompleted: session.outcomes.length,
@@ -163,6 +193,8 @@ export function summarizeGuidedSession(session, { state, tree, readings, items }
     correctCards,
     phraseCorrect: phraseOutcomes.filter((outcome) => outcome.correct).length,
     phraseTotal: phraseOutcomes.length,
+    facetCorrect: facetOutcomes.filter((outcome) => outcome.correct).length,
+    facetTotal: facetOutcomes.length,
     readingCorrect: readingOutcomes.filter((outcome) => outcome.correct).length,
     readingTotal: readingOutcomes.length,
     missionOutcome: session.missionOutcome,
@@ -171,8 +203,10 @@ export function summarizeGuidedSession(session, { state, tree, readings, items }
       ? Math.max(0, session.completedAt - session.startedAt)
       : Math.max(0, Date.now() - session.startedAt),
     newlyReadyPhrases: phraseReady.filter((item) => !baselinePhrases.has(item.skillId)),
+    newlyReadyFacets: facetReady.filter((item) => !baselineFacets.has(item.skillId)),
     newlyRetiredReadings: readingReady.filter((item) => !baselineReadings.has(item.skillId)),
     weakestPhrases,
+    weakestFacets,
     needsFurigana
   };
 }

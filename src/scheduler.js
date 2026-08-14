@@ -1,5 +1,5 @@
 import { observeBkt, probabilityKnown, skillIsReady } from "./mastery.js";
-import { createReadingCharacterItems, createReadingItems } from "./readings.js";
+import { createReadingCharacterItems, createReadingItems, createWordFacetItems } from "./readings.js";
 import { fieldMultiplier } from "./field.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
@@ -19,7 +19,12 @@ export function flattenItems(contentPack, readings = null) {
     }))
   );
   return readings
-    ? [...scenarioItems, ...createReadingItems(readings, contentPack), ...createReadingCharacterItems(readings, contentPack)]
+    ? [
+      ...scenarioItems,
+      ...createReadingItems(readings, contentPack),
+      ...createWordFacetItems(readings, contentPack),
+      ...createReadingCharacterItems(readings, contentPack)
+    ]
     : scenarioItems;
 }
 

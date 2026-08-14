@@ -1,5 +1,5 @@
 import { probabilityKnown } from "./mastery.js";
-import { readingEntriesIn, readingSkillId } from "./readings.js";
+import { itemTestsReading, readingEntriesIn, readingSkillId, wordMeaningSkillId } from "./readings.js";
 import { prerequisitesFor } from "./scheduler.js";
 
 export const MAX_BREAKDOWN_COMPONENTS = 6;
@@ -61,6 +61,7 @@ function addCandidate(candidates, item, relationship, depth = 0) {
     explicit: 1,
     grammar: 2,
     pragmatic: 2,
+    meaning: 3,
     kanji: 3,
     decomposition: 4,
     prerequisite: 5,
@@ -111,16 +112,21 @@ export function breakdownComponents({
   const readingSurface = `${item.prompt ?? ""} ${item.answer?.ja ?? ""}`;
   for (const entry of readingEntriesIn(readingSurface, readings)) {
     addCandidate(candidates, bestItemForSkill(items, readingSkillId(entry), item.scenarioId), "reading");
+    const representedByAuthoredSkill = entry.skillId
+      && [...candidates.values()].some((candidate) => candidate.item.skillId === entry.skillId);
+    if (!itemTestsReading(item) && item.facet !== "written-form" && !representedByAuthoredSkill) {
+      addCandidate(candidates, bestItemForSkill(items, wordMeaningSkillId(entry), item.scenarioId), "meaning");
+    }
   }
 
   const ranked = [...candidates.values()]
     .filter((candidate) => candidate.item.id !== item.id && candidate.item.skillId !== item.skillId)
     .sort((a, b) => Number(b.relationship === "diagnosed") - Number(a.relationship === "diagnosed")
       || Number(b.relationship === "explicit") - Number(a.relationship === "explicit")
+      || a.depth - b.depth
       || probabilityKnown(state.skills[a.item.skillId]) - probabilityKnown(state.skills[b.item.skillId])
       || (state.skills[a.item.skillId]?.attempts ?? 0) - (state.skills[b.item.skillId]?.attempts ?? 0)
       || a.rank - b.rank
-      || a.depth - b.depth
       || a.item.id.localeCompare(b.item.id));
   const selected = ranked.slice(0, Math.max(0, limit));
   const deferred = ranked.slice(selected.length);
