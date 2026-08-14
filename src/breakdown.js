@@ -3,6 +3,8 @@ import { readingEntriesIn, readingSkillId } from "./readings.js";
 import { prerequisitesFor } from "./scheduler.js";
 
 export const MAX_BREAKDOWN_COMPONENTS = 6;
+export const MAX_BREAKDOWN_DEPTH = 4;
+export const MAX_BREAKDOWN_GRAPH_NODES = 64;
 export const BREAKDOWN_REVISIT_MS = 10 * 60 * 1000;
 
 function unique(values) {
@@ -139,6 +141,103 @@ export function breakdownComponents({
   };
 }
 
+function itemLabel(item, tree) {
+  if (item.mode === "kanji") {
+    return item.options.find((option) => option.correct)?.label ?? item.prompt;
+  }
+  if (item.mode === "reading") {
+    return `${item.prompt} · ${item.answer?.reading ?? ""}`.trim();
+  }
+  return tree.nodes.find((node) => node.id === item.skillId)?.label
+    ?? item.answer?.ja
+    ?? item.prompt
+    ?? item.id;
+}
+
+function graphReaches(childrenByItem, startId, targetId) {
+  const seen = new Set();
+  const queue = [startId];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    if (id === targetId) return true;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    queue.push(...(childrenByItem[id] ?? []));
+  }
+  return false;
+}
+
+function recursiveBreakdownGraph({ source, direct, items, tree, readings, state }) {
+  const byId = new Map(items.map((item) => [item.id, item]));
+  const childrenByItem = {};
+  const parentByItem = {};
+  const depthByItem = { [source.id]: 0 };
+  const nodeLabels = { [source.id]: itemLabel(source, tree) };
+  const relationships = { ...direct.relationships };
+  const skillIdsByItem = { ...direct.skillIdsByItem };
+  const selectionEvidence = { ...direct.selectionEvidence };
+  const roots = unique([...direct.componentIds, ...direct.deferredIds]);
+  const discovered = new Set([source.id, ...roots]);
+  const queue = roots.map((id) => ({ id, depth: 1, path: new Set([source.id, id]) }));
+  for (const id of roots) {
+    parentByItem[id] = source.id;
+    depthByItem[id] = 1;
+    const child = byId.get(id);
+    if (child) nodeLabels[id] = itemLabel(child, tree);
+  }
+
+  while (queue.length > 0 && discovered.size <= MAX_BREAKDOWN_GRAPH_NODES) {
+    const current = queue.shift();
+    const currentItem = byId.get(current.id);
+    if (!currentItem || currentItem.breakdownLeaf === true || current.depth >= MAX_BREAKDOWN_DEPTH) {
+      childrenByItem[current.id] = [];
+      continue;
+    }
+    const nested = breakdownComponents({
+      item: currentItem,
+      items,
+      tree,
+      readings,
+      state,
+      limit: MAX_BREAKDOWN_COMPONENTS
+    });
+    const childIds = nested.componentIds.filter((id) =>
+      !current.path.has(id)
+      && id !== source.id
+      && !graphReaches(childrenByItem, id, current.id)
+    ).slice(0, Math.max(0, MAX_BREAKDOWN_GRAPH_NODES - discovered.size));
+    childrenByItem[current.id] = childIds;
+    for (const id of childIds) {
+      relationships[id] ??= nested.relationships[id];
+      skillIdsByItem[id] ??= nested.skillIdsByItem[id];
+      selectionEvidence[id] ??= nested.selectionEvidence[id];
+      if (parentByItem[id] === source.id) {
+        parentByItem[id] = current.id;
+        depthByItem[id] = current.depth + 1;
+      } else {
+        parentByItem[id] ??= current.id;
+        depthByItem[id] ??= current.depth + 1;
+      }
+      const child = byId.get(id);
+      if (child) nodeLabels[id] ??= itemLabel(child, tree);
+      if (discovered.has(id)) continue;
+      discovered.add(id);
+      queue.push({ id, depth: current.depth + 1, path: new Set([...current.path, id]) });
+    }
+  }
+
+  return {
+    childrenByItem,
+    parentByItem,
+    depthByItem,
+    nodeLabels,
+    relationships,
+    skillIdsByItem,
+    selectionEvidence,
+    graphNodeCount: discovered.size - 1
+  };
+}
+
 export function buildBreakdownSession({
   item,
   items,
@@ -151,6 +250,7 @@ export function buildBreakdownSession({
   now = Date.now()
 }) {
   const components = breakdownComponents({ item, items, tree, readings, state, diagnosticSkillIds });
+  const graph = recursiveBreakdownGraph({ source: item, direct: components, items, tree, readings, state });
   return {
     id: `breakdown-${now}-${item.id}`,
     sourceItemId: item.id,
@@ -167,14 +267,20 @@ export function buildBreakdownSession({
     componentIds: components.componentIds,
     componentSkillIds: components.componentSkillIds,
     deferredIds: components.deferredIds,
-    relationships: components.relationships,
-    skillIdsByItem: components.skillIdsByItem,
-    selectionEvidence: components.selectionEvidence,
+    relationships: graph.relationships,
+    skillIdsByItem: graph.skillIdsByItem,
+    selectionEvidence: graph.selectionEvidence,
+    childrenByItem: graph.childrenByItem,
+    parentByItem: graph.parentByItem,
+    depthByItem: graph.depthByItem,
+    nodeLabels: graph.nodeLabels,
+    graphNodeCount: graph.graphNodeCount,
     candidateCount: components.candidateCount,
     deferredCount: components.deferredCount,
     queue: [...components.componentIds],
     queueIndex: 0,
     componentOutcomes: [],
+    expansionEvents: [],
     retryOutcomes: [],
     round: "integration",
     integrationPassedAt: null,
@@ -209,13 +315,35 @@ export function recordBreakdownComponent(session, item, correct, now = Date.now(
     correct: Boolean(correct),
     observedAt: now
   }];
-  const queue = correct ? session.queue : [...session.queue, item.id];
+  const children = correct ? [] : (session.childrenByItem?.[item.id] ?? []).slice(0, MAX_BREAKDOWN_COMPONENTS);
+  const queue = correct
+    ? session.queue
+    : children.length > 0
+      ? [
+        ...session.queue.slice(0, session.queueIndex + 1),
+        ...children,
+        item.id,
+        ...session.queue.slice(session.queueIndex + 1)
+      ]
+      : [...session.queue, item.id];
   const queueIndex = session.queueIndex + 1;
   return {
     ...session,
+    componentIds: unique([...session.componentIds, ...children]),
+    componentSkillIds: unique([
+      ...session.componentSkillIds,
+      ...children.map((id) => session.skillIdsByItem[id])
+    ]),
     queue,
     queueIndex,
     componentOutcomes,
+    expansionEvents: children.length > 0
+      ? [...(session.expansionEvents ?? []), {
+        parentItemId: item.id,
+        childItemIds: children,
+        observedAt: now
+      }]
+      : session.expansionEvents ?? [],
     phase: queueIndex >= queue.length
       ? session.round === "revisit" ? "revisit" : "retry"
       : "components",

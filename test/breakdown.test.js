@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import {
+  MAX_BREAKDOWN_DEPTH,
+  MAX_BREAKDOWN_GRAPH_NODES,
   archiveCompletedBreakdown,
   beginBreakdownRevisit,
   breakdownComponents,
@@ -181,6 +183,51 @@ test("a missed multi-kanji reading decomposes into one card per written characte
     "reading-character-card.minashiro.2"
   ]));
   assert.ok(session.componentIds.every((id) => session.relationships[id] === "kanji"));
+});
+
+test("a missed word inside a phrase expands recursively before rebuilding the word", async () => {
+  const { tree, readings, items, state } = await fixtures();
+  const source = items.find((item) => item.id === "geo.miyazaki.address.reply");
+  let session = buildBreakdownSession({ item: source, items, tree, readings, state, now: NOW });
+
+  assert.ok(session.graphNodeCount <= MAX_BREAKDOWN_GRAPH_NODES);
+  assert.ok(Math.max(...Object.values(session.depthByItem)) <= MAX_BREAKDOWN_DEPTH);
+  const visit = (id, path = new Set()) => {
+    assert.ok(!path.has(id), `recursive breakdown graph cycles through ${id}`);
+    const nextPath = new Set([...path, id]);
+    for (const childId of session.childrenByItem[id] ?? []) visit(childId, nextPath);
+  };
+  for (const rootId of [...session.componentIds, ...session.deferredIds]) visit(rootId, new Set([source.id]));
+  while (currentBreakdownCard(session, items, source).id !== "reading-card.minashiro") {
+    const component = currentBreakdownCard(session, items, source);
+    session = recordBreakdownComponent(session, component, true, session.updatedAt + 1);
+  }
+
+  const word = currentBreakdownCard(session, items, source);
+  session = recordBreakdownComponent(session, word, false, session.updatedAt + 1);
+  const characterIds = [
+    "reading-character-card.minashiro.0",
+    "reading-character-card.minashiro.1",
+    "reading-character-card.minashiro.2"
+  ];
+
+  assert.deepEqual(session.childrenByItem[word.id], characterIds);
+  assert.deepEqual(session.expansionEvents.at(-1), {
+    parentItemId: word.id,
+    childItemIds: characterIds,
+    observedAt: session.updatedAt
+  });
+  assert.ok(characterIds.every((id) => session.componentIds.includes(id)));
+  assert.equal(currentBreakdownCard(session, items, source).id, characterIds[0]);
+  assert.equal(session.parentByItem[characterIds[1]], word.id);
+  assert.equal(session.nodeLabels[characterIds[1]], "納");
+
+  for (const characterId of characterIds) {
+    const character = currentBreakdownCard(session, items, source);
+    assert.equal(character.id, characterId);
+    session = recordBreakdownComponent(session, character, true, session.updatedAt + 1);
+  }
+  assert.equal(currentBreakdownCard(session, items, source).id, word.id);
 });
 
 test("every card is decomposable or declares an honest atomic leaf", async () => {

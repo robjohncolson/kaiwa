@@ -1,5 +1,8 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import {
+  MAX_BREAKDOWN_COMPONENTS,
+  MAX_BREAKDOWN_DEPTH,
+  MAX_BREAKDOWN_GRAPH_NODES,
   abandonBreakdown,
   archiveCompletedBreakdown,
   beginBreakdownRevisit,
@@ -322,10 +325,30 @@ function breakdownIsValid(session) {
   if (!breakdownSourceItem(session)) return false;
   if (!Array.isArray(session.componentIds) || !Array.isArray(session.deferredIds) || !Array.isArray(session.queue)) return false;
   if (!Array.isArray(session.diagnosis?.skillIds)) return false;
+  if (!Array.isArray(session.expansionEvents)) return false;
+  if (!session.childrenByItem || typeof session.childrenByItem !== "object") return false;
+  if (!session.parentByItem || typeof session.parentByItem !== "object") return false;
+  if (!session.depthByItem || typeof session.depthByItem !== "object") return false;
+  if (!session.nodeLabels || typeof session.nodeLabels !== "object") return false;
+  if (!Number.isInteger(session.graphNodeCount) || session.graphNodeCount < 0 || session.graphNodeCount > MAX_BREAKDOWN_GRAPH_NODES) return false;
   if (session.phase === "waiting" && !Number.isFinite(session.revisitAt)) return false;
   if (!session.componentIds.every((id) => items.some((item) => item.id === id))) return false;
   if (!session.deferredIds.every((id) => items.some((item) => item.id === id) && !session.componentIds.includes(id))) return false;
   if (!session.queue.every((id) => session.componentIds.includes(id))) return false;
+  if (!Object.values(session.childrenByItem).every((ids) =>
+    Array.isArray(ids)
+    && ids.length <= MAX_BREAKDOWN_COMPONENTS
+    && ids.every((id) => items.some((item) => item.id === id))
+  )) return false;
+  if (!Object.values(session.depthByItem).every((depth) =>
+    Number.isInteger(depth) && depth >= 0 && depth <= MAX_BREAKDOWN_DEPTH
+  )) return false;
+  if (!session.expansionEvents.every((event) =>
+    items.some((item) => item.id === event.parentItemId)
+    && Array.isArray(event.childItemIds)
+    && event.childItemIds.length <= MAX_BREAKDOWN_COMPONENTS
+    && event.childItemIds.every((id) => items.some((item) => item.id === id))
+  )) return false;
   return Number.isInteger(session.queueIndex)
     && session.queueIndex >= 0
     && session.queueIndex <= session.queue.length;
@@ -498,7 +521,16 @@ function breakdownCardReason(active, item) {
     ? `${evidence.knownPercent}% BKT after ${evidence.attempts} check${evidence.attempts === 1 ? "" : "s"}`
     : "not objectively checked yet";
   const round = active.round === "revisit" ? "Delayed miss repair" : "Breakdown";
-  return `${round} · ${labels[relationship] ?? relationship} · ${history}`;
+  const path = [];
+  const seen = new Set();
+  let id = item.id;
+  while (id && !seen.has(id) && path.length <= 5) {
+    seen.add(id);
+    path.unshift(active.nodeLabels?.[id] ?? id);
+    id = active.parentByItem?.[id];
+  }
+  const breadcrumb = path.length > 1 ? ` · ${path.join(" → ")}` : "";
+  return `${round} · ${labels[relationship] ?? relationship} · ${history}${breadcrumb}`;
 }
 
 function cardOptions(item) {
@@ -795,6 +827,7 @@ function renderBreakdownOverview() {
     progress.atomic ? "atomic leaf" : `${progress.componentTotal} targeted parts`,
     `${progress.componentChecks} component checks`,
     `${progress.retries} whole retries`,
+    active.expansionEvents?.length ? `${active.expansionEvents.length} recursive expansions` : null,
     active.diagnosis?.skillIds?.length ? "answer-specific diagnosis" : "graph diagnosis",
     active.deferredCount ? `${active.deferredCount} lower-priority nodes deferred` : null
   );

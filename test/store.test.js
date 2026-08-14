@@ -42,7 +42,7 @@ test("BKT state round-trips through browser-like storage", () => {
   const loaded = loadState(tree, storage, 200);
 
   assert.ok(storage.values.has(STORAGE_KEY));
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.equal(loaded.skills.one.attempts, 3);
   assert.equal(loaded.skills.one.pKnown, 0.72);
   assert.equal(loaded.skills.one.longDue, null);
@@ -102,7 +102,7 @@ test("v1 Beta state migrates without discarding attempts or cram timing", () => 
   storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
 
   const loaded = loadState(tree, storage, 200);
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.equal(loaded.skills.one.pKnown, 0.6);
   assert.equal(loaded.skills.one.attempts, 4);
   assert.equal(loaded.skills.one.cramDue, 500);
@@ -122,7 +122,7 @@ test("v2 state gains mission metrics and mission evidence without losing progres
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.equal(loaded.skills.one.attempts, 2);
   assert.equal(loaded.skills.one.correct, 1);
   assert.deepEqual(loaded.skills.one.observations.mission, { correct: 0, incorrect: 0 });
@@ -142,7 +142,7 @@ test("v3 state gains guided sessions and honest reading checkpoints", () => {
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.deepEqual(loaded.session, { active: null, recent: [] });
   assert.equal(loaded.skills.one.pKnown, 0.9);
   assert.equal(loaded.skills.one.readingCheckpointStreak, 0);
@@ -165,7 +165,7 @@ test("progress backups restore through current-tree migration", () => {
   const raw = createProgressBackup(original, 150);
   const restored = restoreProgressBackup(raw, tree, storage, 200);
 
-  assert.equal(restored.version, 8);
+  assert.equal(restored.version, 9);
   assert.equal(restored.totalReviews, 7);
   assert.equal(restored.skills.one.pKnown, 0.81);
   assert.equal(restored.skills.one.readingCheckpointStreak, 2);
@@ -187,7 +187,7 @@ test("progress backup preview migrates without mutating storage", () => {
   const preview = previewProgressBackup(createProgressBackup(incoming, 250), tree, 300);
 
   assert.equal(preview.exportedAt, 250);
-  assert.equal(preview.sourceVersion, 8);
+  assert.equal(preview.sourceVersion, 9);
   assert.equal(preview.state.totalReviews, 11);
   assert.equal(preview.state.totalProduction, 4);
   assert.equal(preview.state.field.events.length, 1);
@@ -206,7 +206,7 @@ test("v4 state gains independent production and field evidence", () => {
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.equal(loaded.totalProduction, 0);
   assert.deepEqual(loaded.field, { events: [] });
   assert.equal(loaded.skills.one.production.attempts, 0);
@@ -223,7 +223,7 @@ test("v5 state gains resumable field repair state", () => {
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.deepEqual(loaded.repair, { active: null, recent: [] });
   assert.equal(loaded.totalReviews, 0);
   assert.equal(loaded.totalProduction, 0);
@@ -238,7 +238,7 @@ test("v6 state gains resumable card breakdowns", () => {
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.deepEqual(loaded.breakdown, { active: null, recent: [] });
   assert.equal(loaded.totalReviews, 0);
 });
@@ -264,12 +264,44 @@ test("v7 breakdowns gain delayed-recall and diagnosis fields without losing the 
 
   const loaded = loadState(tree, storage, 200);
 
-  assert.equal(loaded.version, 8);
+  assert.equal(loaded.version, 9);
   assert.equal(loaded.breakdown.active.id, "breakdown-100-one-card");
   assert.equal(loaded.breakdown.active.round, "integration");
   assert.deepEqual(loaded.breakdown.active.diagnosis, { selectedOptionId: null, skillIds: [] });
   assert.deepEqual(loaded.breakdown.active.selectionEvidence, {});
   assert.equal(loaded.breakdown.active.revisitAt, null);
+});
+
+test("v8 breakdowns gain bounded recursive graph fields without losing the active queue", () => {
+  const storage = memoryStorage();
+  const legacy = createInitialState(tree, 100);
+  legacy.version = 8;
+  legacy.breakdown.active = {
+    id: "breakdown-100-one-card",
+    sourceItemId: "one-card",
+    sourceSkillId: "one",
+    phase: "components",
+    round: "integration",
+    componentIds: ["one-part"],
+    componentSkillIds: ["one"],
+    deferredIds: [],
+    queue: ["one-part"],
+    queueIndex: 0,
+    componentOutcomes: [],
+    retryOutcomes: []
+  };
+  storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+  const loaded = loadState(tree, storage, 200);
+
+  assert.equal(loaded.version, 9);
+  assert.deepEqual(loaded.breakdown.active.queue, ["one-part"]);
+  assert.deepEqual(loaded.breakdown.active.childrenByItem, {});
+  assert.deepEqual(loaded.breakdown.active.parentByItem, {});
+  assert.deepEqual(loaded.breakdown.active.depthByItem, {});
+  assert.deepEqual(loaded.breakdown.active.nodeLabels, {});
+  assert.equal(loaded.breakdown.active.graphNodeCount, 1);
+  assert.deepEqual(loaded.breakdown.active.expansionEvents, []);
 });
 
 test("progress restore rejects unrelated and unsupported JSON", () => {
