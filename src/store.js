@@ -1,7 +1,7 @@
 import { emptyProductionEvidence } from "./production.js";
 
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
-export const STATE_VERSION = 8;
+export const STATE_VERSION = 9;
 
 function bktDefaults(tree, node) {
   return {
@@ -65,6 +65,12 @@ function mergeBreakdown(savedBreakdown) {
       relationships: active.relationships ?? {},
       skillIdsByItem: active.skillIdsByItem ?? {},
       selectionEvidence: active.selectionEvidence ?? {},
+      childrenByItem: active.childrenByItem ?? {},
+      parentByItem: active.parentByItem ?? {},
+      depthByItem: active.depthByItem ?? {},
+      nodeLabels: active.nodeLabels ?? {},
+      graphNodeCount: active.graphNodeCount ?? active.componentIds?.length ?? 0,
+      expansionEvents: active.expansionEvents ?? [],
       round: active.round ?? "integration",
       integrationPassedAt: active.integrationPassedAt ?? null,
       revisitAt: active.revisitAt ?? null,
@@ -122,7 +128,7 @@ function mergeSkill(savedSkill, initialSkill, candidateVersion) {
 
 function mergeWithCurrentTree(candidate, tree, now) {
   const initial = createInitialState(tree, now);
-  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8].includes(candidate.version) || typeof candidate.skills !== "object") {
+  if (!candidate || ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(candidate.version) || typeof candidate.skills !== "object") {
     return initial;
   }
 
@@ -200,7 +206,7 @@ export function previewProgressBackup(raw, tree, now = Date.now()) {
   if (envelope?.format !== "kaiwa-progress" || envelope.version !== 1 || !envelope.state) {
     throw new TypeError("This is not a Kaiwa progress backup.");
   }
-  if (![1, 2, 3, 4, 5, 6, 7, 8].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
+  if (![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(envelope.state.version) || typeof envelope.state.skills !== "object") {
     throw new TypeError("This Kaiwa backup has an unsupported state schema.");
   }
   return {

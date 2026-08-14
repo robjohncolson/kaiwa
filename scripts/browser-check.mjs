@@ -368,7 +368,7 @@ async function run() {
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Menu"), "Home did not return after the kanji-component check");
 
-    // A normal card miss opens a persisted component -> integration cycle.
+    // A normal card miss opens a persisted recursive component -> integration cycle.
     await navigateTool("One quick card");
     await answerCard(false);
     check(Boolean(await js(`document.querySelector(".result-card")?.textContent.includes("WHAT THAT ANSWER SUGGESTS")`)), "a diagnosed distractor explains which nodes it implicates");
@@ -378,16 +378,32 @@ async function run() {
     await layout("390x844 breakdown overview");
     check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.componentIds.length`) === 5, "the Miyazaki phrase activates five contextual reading nodes");
     await click("Start parts");
+    let reachedNestedWord = false;
+    for (let part = 0; part < 5; part += 1) {
+      if (await js(`document.querySelector("#wizard-screen")?.dataset.itemId`) === "reading-card.minashiro") {
+        reachedNestedWord = true;
+        break;
+      }
+      await answerCard(true);
+      await click("Next part");
+    }
+    check(reachedNestedWord, "the phrase breakdown reaches its 三納代 word node");
+    const queueLengthBeforeExpansion = await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.queue.length`);
     await answerCard(false);
-    check(await actionLabel("Next part"), "a missed component remains inside the breakdown");
+    check(await actionLabel("Next part"), "a missed word remains inside the breakdown");
     await click("Next part");
-    check(await js(`JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active.queue.length`) === 6, "a missed component is requeued for another clean check");
+    const recursiveState = await js(`(() => { const active = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})).breakdown.active; return { queueLength: active.queue.length, event: active.expansionEvents.at(-1), currentId: active.queue[active.queueIndex] }; })()`);
+    check(recursiveState.queueLength === queueLengthBeforeExpansion + 4, "a missed three-kanji word inserts three character checks and a word retry");
+    check(recursiveState.event.parentItemId === "reading-card.minashiro" && recursiveState.event.childItemIds.length === 3, "the recursive expansion is persisted with its parent-child edges");
+    check(recursiveState.currentId.startsWith("reading-character-card.minashiro."), "the next card teaches an individual kanji");
+    check(await title() === "Rebuild the written word.", "nested remediation reaches the written-kanji task immediately");
+    check(Boolean(await js(`document.querySelector(".practice-reason-text")?.textContent.includes("三納代 · みなしろ →")`)), "the nested card explains its phrase-to-word-to-kanji path");
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Resume breakdown"), "Active card breakdown did not survive refresh");
     await click("Resume breakdown");
     check(await title() === "Learn the parts.", "refresh returns to the active component phase");
     await click("Continue parts");
-    for (let part = 0; part < 10; part += 1) {
+    for (let part = 0; part < 20; part += 1) {
       await answerCard(true);
       if (await actionLabel("Next part")) {
         await click("Next part");
