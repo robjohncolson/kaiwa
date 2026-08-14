@@ -1,5 +1,5 @@
 import { observeBkt, probabilityKnown, skillIsReady } from "./mastery.js";
-import { createReadingItems } from "./readings.js";
+import { createReadingCharacterItems, createReadingItems } from "./readings.js";
 import { fieldMultiplier } from "./field.js";
 
 export const CRAM_INTERVALS_MS = Object.freeze([
@@ -19,7 +19,7 @@ export function flattenItems(contentPack, readings = null) {
     }))
   );
   return readings
-    ? [...scenarioItems, ...createReadingItems(readings, contentPack)]
+    ? [...scenarioItems, ...createReadingItems(readings, contentPack), ...createReadingCharacterItems(readings, contentPack)]
     : scenarioItems;
 }
 
@@ -48,7 +48,7 @@ export function focusCandidates(items, tree, state) {
   const focus = state.focus;
   if (!focus?.skillId && !focus?.scenarioId) return [];
 
-  const unlocked = items.filter((item) => isSkillUnlocked(tree, state.skills, item.skillId));
+  const unlocked = items.filter((item) => !item.remediationOnly && isSkillUnlocked(tree, state.skills, item.skillId));
   if (focus.skillId) {
     return unlocked.filter((item) => item.skillId === focus.skillId);
   }
@@ -76,7 +76,7 @@ export function scoreItem(item, tree, state, now = Date.now()) {
 }
 
 export function selectNextItem(items, tree, state, now = Date.now()) {
-  const unlocked = items.filter((item) => isSkillUnlocked(tree, state.skills, item.skillId));
+  const unlocked = items.filter((item) => !item.remediationOnly && isSkillUnlocked(tree, state.skills, item.skillId));
   if (unlocked.length === 0) return null;
 
   const focused = focusCandidates(items, tree, state);

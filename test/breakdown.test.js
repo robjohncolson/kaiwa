@@ -160,12 +160,27 @@ test("a delayed miss reopens components and still requires another delayed whole
 
 test("atomic leaves study and retry without inventing false subskills", async () => {
   const { tree, readings, items, state } = await fixtures();
-  const source = items.find((item) => item.id === "reading-card.koyugun");
+  const source = items.find((item) => item.id === "reading-card.tsugi");
   const session = buildBreakdownSession({ item: source, items, tree, readings, state, now: NOW });
 
   assert.equal(session.phase, "retry");
   assert.deepEqual(session.componentIds, []);
   assert.equal(breakdownProgress(session).atomic, true);
+});
+
+test("a missed multi-kanji reading decomposes into one card per written character", async () => {
+  const { tree, readings, items, state } = await fixtures();
+  const source = items.find((item) => item.id === "reading-card.minashiro");
+  const session = buildBreakdownSession({ item: source, items, tree, readings, state, now: NOW });
+
+  assert.equal(session.phase, "components");
+  assert.equal(breakdownProgress(session).atomic, false);
+  assert.deepEqual(new Set(session.componentIds), new Set([
+    "reading-character-card.minashiro.0",
+    "reading-character-card.minashiro.1",
+    "reading-character-card.minashiro.2"
+  ]));
+  assert.ok(session.componentIds.every((id) => session.relationships[id] === "kanji"));
 });
 
 test("every card is decomposable or declares an honest atomic leaf", async () => {
