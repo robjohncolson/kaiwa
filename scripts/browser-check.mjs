@@ -217,6 +217,17 @@ async function run() {
     await cdp.send("Network.enable", {}, sessionId);
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `
       window.__kaiwaErrors = [];
+      window.__kaiwaSpoken = [];
+      class KaiwaFakeUtterance { constructor(text) { this.text = text; } }
+      const kaiwaVoice = { name: "Kaiwa Japanese", lang: "ja-JP", localService: true };
+      const kaiwaSpeech = {
+        getVoices: () => [kaiwaVoice],
+        cancel: () => {},
+        speak: utterance => { window.__kaiwaSpoken.push({ text: utterance.text, lang: utterance.lang, rate: utterance.rate }); queueMicrotask(() => utterance.onend?.()); },
+        addEventListener: () => {}
+      };
+      try { Object.defineProperty(window, "speechSynthesis", { configurable: true, value: kaiwaSpeech }); } catch {}
+      try { Object.defineProperty(window, "SpeechSynthesisUtterance", { configurable: true, value: KaiwaFakeUtterance }); } catch {}
       addEventListener("error", event => window.__kaiwaErrors.push(event.message));
       addEventListener("unhandledrejection", event => window.__kaiwaErrors.push(String(event.reason)));
     ` }, sessionId);
@@ -274,7 +285,12 @@ async function run() {
         : item?.options;
       return options?.find(option => option.id === optionId)?.correct ?? null;
     })()`);
+    const prepareAudioCard = async () => {
+      if (await actionLabel("Play audio")) await click("Play audio");
+      if (await actionLabel("Start choices")) await click("Start choices");
+    };
     const answerCard = async (correct) => {
+      await prepareAudioCard();
       for (let candidate = 0; candidate < 4; candidate += 1) {
         const candidateCorrect = await candidateIsCorrect();
         if (candidateCorrect == null) throw new Error("Could not resolve the active card candidate.");
@@ -305,6 +321,8 @@ async function run() {
     };
     const finishProductionMission = async () => {
       for (let turn = 0; turn < 12; turn += 1) {
+        if (await actionLabel("Play audio")) await click("Play audio");
+        if (await actionLabel("Respond")) await click("Respond");
         if (await actionLabel("I spoke")) await click("I spoke");
         if (await actionLabel("Yes")) await click("Yes");
         if (await actionLabel("Continue")) await click("Continue");
@@ -497,21 +515,35 @@ async function run() {
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Start practice"), "Home did not return after the place-reading check");
 
-    // The skill path groups each word's four independent Bayesian facets.
+    // The skill path groups each word's five independent Bayesian facets.
     await navigateTool("Skill path");
     for (let scenario = 0; scenario < 30 && await title() !== "Miyazaki place readings"; scenario += 1) await click("Another →");
     check(await title() === "Miyazaki place readings", "skill path reaches the Miyazaki word corpus");
     check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("word facets")`)), "scenario progress reports word-facet readiness");
     await click("Open path");
     for (let skill = 0; skill < 30 && await js(`document.querySelector(".screen-kicker")?.textContent`) !== "WORD FACETS"; skill += 1) await click("Next skill →");
-    check(await js(`document.querySelector(".screen-kicker")?.textContent`) === "WORD FACETS", "skill path groups a word instead of flattening four opaque nodes");
-    check(await js(`document.querySelectorAll(".stage-list li").length`) === 4, "word detail shows sound, form, meaning, and recall rows");
+    check(await js(`document.querySelector(".screen-kicker")?.textContent`) === "WORD FACETS", "skill path groups a word instead of flattening five opaque nodes");
+    check(await js(`document.querySelectorAll(".stage-list li").length`) === 5, "word detail shows ear, sound, form, meaning, and recall rows");
+    check(Boolean(await js(`document.querySelector(".stage-list")?.textContent.includes("Heard sound → meaning")`)), "word detail exposes the listening direction");
     check(Boolean(await js(`document.querySelector(".stage-list")?.textContent.includes("Meaning → Japanese")`)), "word detail exposes the direction of every facet");
     check(await actionLabel("Practice weakest"), "word detail targets its weakest facet directly");
     await layout("390x844 word facets");
     await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.focus = { scenarioId: null, skillId: null, mode: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Start practice"), "Home did not return after the word-facet map check");
+
+    // Ear-first word cards speak reviewed kana, hide orthography, and reveal furigana after the attempt.
+    await navigateTool("Listen to a word");
+    await click("Choose");
+    check(await actionLabel("Play audio"), "ear-first card waits for an intentional device-voice play");
+    check(await js(`document.querySelector(".prompt-japanese") === null`), "ear-first card hides the written word before listening");
+    await click("Play audio");
+    check(await js(`window.__kaiwaSpoken.at(-1)?.lang`) === "ja-JP", "ear-first playback explicitly selects Japanese speech");
+    check(await js(`!/[\\p{Script=Han}A-Za-z0-9]/u.test(window.__kaiwaSpoken.at(-1)?.text || "")`), "ear-first playback feeds reviewed kana instead of guessed kanji");
+    await click("Start choices");
+    await answerCard(true);
+    check(await js(`[...document.querySelectorAll(".result-card rt")].some(rt => rt.getAttribute("aria-hidden") === "false")`), "ear-first feedback reveals furigana after the attempt");
+    await click("Home");
 
     // Every fixed line has standalone speak-first practice with no BKT mutation.
     await navigateTool("Speak a fixed line");
@@ -582,6 +614,9 @@ async function run() {
     await click("Choose");
     await click("No · choose");
     await click("No · supported");
+    await click("Play audio");
+    check(await js(`document.querySelector(".prompt-japanese") === null`), "mission partner audio hides its transcript before response");
+    await click("Respond");
     check(await js(`document.querySelector(".candidate-card .line-meaning") === null`), "mission recognition does not reveal candidate meanings");
     check(await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); const run = state.mission.active; return Array.isArray(run.choiceOrders) ? false : Object.keys(run.choiceOrders || {}).length > 0; })()`), "mission run persists shuffled candidate orders");
     await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.mission.active = null; state.breakdown.queued = []; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);

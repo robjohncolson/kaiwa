@@ -62,7 +62,7 @@ test("island layout is deterministic and connects prerequisite edges", () => {
   assert.ok(first.height >= 100);
 });
 
-test("real map covers every phrase and groups four BKT facets per word", async () => {
+test("real map covers every phrase and groups five BKT facets per word", async () => {
   const [content, baseTree, readings] = await Promise.all([
     readJson("../data/scenarios.json"),
     readJson("../data/tree.json"),
@@ -82,13 +82,15 @@ test("real map covers every phrase and groups four BKT facets per word", async (
   assert.ok(map.islands.every((island) => island.readingReady <= island.readingTotal));
   assert.ok(map.islands.every((island) => island.recognizeReady <= island.recognizeTotal));
   assert.ok(map.islands.every((island) => island.sayReady <= island.sayTotal));
+  assert.ok(map.islands.every((island) => island.hearingReady <= island.hearingTotal));
   assert.ok(map.islands.every((island) => island.conversationReady === (
     island.recognizeReady === island.recognizeTotal && island.sayReady === island.sayTotal
   )));
   assert.ok(map.islands.flatMap((island) => island.nodes).some((node) => node.fixedLine && !node.sayReady));
   assert.equal(map.islands.reduce((total, island) => total + island.readingTotal, 0), readings.entries.length);
-  assert.equal(map.islands.reduce((total, island) => total + island.facetTotal, 0), readings.entries.length * 4);
-  assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.length === 4));
+  assert.equal(map.islands.reduce((total, island) => total + island.facetTotal, 0), readings.entries.length * 5);
+  assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.length === 5));
+  assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.map((facet) => facet.direction).includes("Heard sound → meaning")));
   assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.map((facet) => facet.direction).join(" ").includes("Meaning → Japanese")));
   assert.ok(map.islands.some((island) => island.weakestReadings.length === 3));
 

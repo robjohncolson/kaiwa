@@ -1,6 +1,7 @@
 import { probabilityKnown, skillIsReady } from "./mastery.js";
 import { fieldMultiplier } from "./field.js";
 import {
+  listeningSkillId,
   readingIsReady,
   readingSkillId,
   wordFormSkillId,
@@ -27,6 +28,7 @@ export function mapSkillStatus(tree, state, skillId) {
 function wordFacetDetails(entry, tree, readings, state) {
   const definitions = [
     { key: "sound", label: "Sound", direction: "Written form → reading", skillId: readingSkillId(entry) },
+    { key: "listening", label: "Ear", direction: "Heard sound → meaning", skillId: listeningSkillId(entry) },
     { key: "written-form", label: "Written form", direction: "Reading → written form", skillId: wordFormSkillId(entry) },
     { key: "meaning-recognition", label: "Meaning", direction: "Japanese → meaning", skillId: wordMeaningSkillId(entry) },
     { key: "meaning-recall", label: "Recall", direction: "Meaning → Japanese", skillId: wordRecallSkillId(entry) }
@@ -216,6 +218,7 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
       || a.term.localeCompare(b.term));
     const facetReady = words.reduce((total, word) => total + word.ready, 0);
     const facetTotal = words.reduce((total, word) => total + word.total, 0);
+    const hearingReady = words.filter((word) => word.facets.find((facet) => facet.key === "listening")?.ready).length;
     const recognizeReady = fixedLines.filter((line) => skillIsReady(tree, state.skills[line.skillId])).length;
     const say = speakingReadiness(speakingItems, state, { scenarioId: scenario.id });
 
@@ -229,6 +232,8 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
       readingTotal: readingStats.length,
       facetReady,
       facetTotal,
+      hearingReady,
+      hearingTotal: words.length,
       recognizeReady,
       recognizeTotal: fixedLines.length,
       sayReady: say.ready,

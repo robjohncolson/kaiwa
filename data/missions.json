@@ -11,6 +11,7 @@
           "id": "state-purpose",
           "kind": "staff",
           "prompt": "いらっしゃいませ。",
+          "promptReading": "いらっしゃいませ。",
           "meaning": "Welcome. How can I help?",
           "targetSkillId": "shimamura.pickup",
           "choiceSkillIds": ["shimamura.pickup", "shimamura.stock_check", "abort.wakarimasen"]
@@ -19,6 +20,7 @@
           "id": "answer-name",
           "kind": "staff",
           "prompt": "お名前は？",
+          "promptReading": "おなまえは？",
           "meaning": "Your name?",
           "targetSkillId": "identity.name_katakana",
           "choiceSkillIds": ["identity.name_katakana", "shimamura.pickup", "abort.wakarimasen"]
@@ -27,6 +29,7 @@
           "id": "check-stock",
           "kind": "staff",
           "prompt": "SXC-1は福岡店からの取り寄せですね。",
+          "promptReading": "エスエックスシーワンはふくおかてんからのとりよせですね。",
           "meaning": "The SXC-1 is a special order from the Fukuoka branch, right?",
           "targetSkillId": "shimamura.stock_check",
           "choiceSkillIds": ["shimamura.stock_check", "shimamura.pickup", "abort.wakarimasen"]
@@ -35,6 +38,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "もう少し詳しくお願いします。",
+          "promptReading": "もうすこしくわしくおねがいします。",
           "meaning": "Please explain in a little more detail.",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["shimamura.stock_check", "shimamura.pickup", "abort.wakarimasen"]
@@ -51,6 +55,7 @@
           "id": "request-checkout",
           "kind": "staff",
           "prompt": "いらっしゃいませ。",
+          "promptReading": "いらっしゃいませ。",
           "meaning": "Welcome. How can I help?",
           "targetSkillId": "hotel.checkout",
           "choiceSkillIds": ["hotel.checkout", "hotel.refund_six_nights", "abort.wakarimasen"]
@@ -59,6 +64,7 @@
           "id": "request-refund",
           "kind": "staff",
           "prompt": "ほかに何かありますか？",
+          "promptReading": "ほかになにかありますか？",
           "meaning": "Is there anything else?",
           "targetSkillId": "hotel.refund_six_nights",
           "choiceSkillIds": ["hotel.refund_six_nights", "hotel.checkout", "abort.wakarimasen"]
@@ -67,6 +73,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "もう少し詳しくお願いします。",
+          "promptReading": "もうすこしくわしくおねがいします。",
           "meaning": "Please explain in a little more detail.",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["hotel.refund_six_nights", "hotel.checkout", "abort.wakarimasen"]
@@ -83,6 +90,7 @@
           "id": "arrive",
           "kind": "staff",
           "prompt": "こんばんは。",
+          "promptReading": "こんばんは。",
           "meaning": "Good evening.",
           "targetSkillId": "family.greeting",
           "choiceSkillIds": ["family.greeting", "family.thanks_hosting", "abort.wakarimasen"]
@@ -91,6 +99,7 @@
           "id": "start-meal",
           "kind": "staff",
           "prompt": "どうぞ。",
+          "promptReading": "どうぞ。",
           "meaning": "Please, go ahead.",
           "targetSkillId": "family.itadakimasu",
           "choiceSkillIds": ["family.itadakimasu", "family.greeting", "abort.wakarimasen"]
@@ -99,6 +108,7 @@
           "id": "thank-host",
           "kind": "staff",
           "prompt": "ありがとうございました。",
+          "promptReading": "ありがとうございました。",
           "meaning": "Thank you very much.",
           "targetSkillId": "family.thanks_hosting",
           "choiceSkillIds": ["family.thanks_hosting", "family.itadakimasu", "abort.wakarimasen"]
@@ -107,6 +117,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "さいきんはどうですか？",
+          "promptReading": "さいきんはどうですか？",
           "meaning": "How have things been lately?",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["social.fishing", "family.thanks_hosting", "abort.wakarimasen"]
@@ -123,6 +134,7 @@
           "id": "offer-plan",
           "kind": "staff",
           "prompt": "どこがいい？",
+          "promptReading": "どこがいい？",
           "meaning": "Where would you like to go?",
           "targetSkillId": "social.treat",
           "choiceSkillIds": ["social.treat", "social.help_shochu", "abort.wakarimasen"]
@@ -131,6 +143,7 @@
           "id": "ask-fishing",
           "kind": "staff",
           "prompt": "釣りはどう？",
+          "promptReading": "つりはどう？",
           "meaning": "How is fishing?",
           "targetSkillId": "social.fishing",
           "choiceSkillIds": ["social.fishing", "social.synth_gift", "abort.wakarimasen"]
@@ -139,6 +152,7 @@
           "id": "ask-shochu",
           "kind": "staff",
           "prompt": "お父さんの焼酎はどうする？",
+          "promptReading": "おとうさんのしょうちゅうはどうする？",
           "meaning": "What will you do about shochu for your father?",
           "targetSkillId": "social.help_shochu",
           "choiceSkillIds": ["social.help_shochu", "social.treat", "abort.wakarimasen"]
@@ -147,6 +161,7 @@
           "id": "ask-interesting",
           "kind": "staff",
           "prompt": "面白いものはある？",
+          "promptReading": "おもしろいものはある？",
           "meaning": "Is there anything interesting?",
           "targetSkillId": "social.synth_gift",
           "choiceSkillIds": ["social.synth_gift", "social.fishing", "abort.wakarimasen"]
@@ -155,6 +170,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "仕事はどう？",
+          "promptReading": "しごとはどう？",
           "meaning": "How is work?",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["social.fishing", "social.treat", "abort.wakarimasen"]
@@ -171,6 +187,7 @@
           "id": "find-search",
           "kind": "staff",
           "prompt": "電話番号で検索しますか？",
+          "promptReading": "でんわばんごうでけんさくしますか？",
           "meaning": "Will you search by phone number?",
           "targetSkillId": "nav.phone_search",
           "choiceSkillIds": ["nav.phone_search", "nav.address_search", "abort.wakarimasen"]
@@ -179,6 +196,7 @@
           "id": "protect-reading",
           "kind": "staff",
           "prompt": "丁の読み方は？",
+          "promptReading": "ていのよみかたは？",
           "meaning": "How is 丁 read?",
           "targetSkillId": "nav.address_search",
           "choiceSkillIds": ["nav.address_search", "nav.saved_route", "abort.wakarimasen"]
@@ -187,6 +205,7 @@
           "id": "start-saved",
           "kind": "staff",
           "prompt": "登録地点です。",
+          "promptReading": "とうろくちてんです。",
           "meaning": "Here is the saved point.",
           "targetSkillId": "nav.saved_route",
           "choiceSkillIds": ["nav.saved_route", "nav.phone_search", "abort.wakarimasen"]
@@ -195,6 +214,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "住所をもっと詳しく教えてください。",
+          "promptReading": "じゅうしょをもっとくわしくおしえてください。",
           "meaning": "Please explain the address in more detail.",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["nav.address_search", "nav.phone_search", "abort.wakarimasen"]
@@ -211,6 +231,7 @@
           "id": "ask-address",
           "kind": "staff",
           "prompt": "住所はわかる？",
+          "promptReading": "じゅうしょはわかる？",
           "meaning": "Do you know the address?",
           "targetSkillId": "visit.ask_address",
           "choiceSkillIds": ["visit.ask_address", "visit.ask_time", "abort.wakarimasen"]
@@ -219,6 +240,7 @@
           "id": "choose-time",
           "kind": "staff",
           "prompt": "何時でもいいよ。",
+          "promptReading": "なんじでもいいよ。",
           "meaning": "Any time is fine.",
           "targetSkillId": "visit.ask_time",
           "choiceSkillIds": ["visit.ask_time", "visit.offer_food", "abort.wakarimasen"]
@@ -227,6 +249,7 @@
           "id": "offer-food",
           "kind": "staff",
           "prompt": "何も持ってこなくていいよ。",
+          "promptReading": "なにももってこなくていいよ。",
           "meaning": "You do not need to bring anything.",
           "targetSkillId": "visit.offer_food",
           "choiceSkillIds": ["visit.offer_food", "visit.ask_address", "abort.wakarimasen"]
@@ -235,6 +258,7 @@
           "id": "accept-stay",
           "kind": "staff",
           "prompt": "うちに泊まっていく？",
+          "promptReading": "うちにとまっていく？",
           "meaning": "Will you stay at our place?",
           "targetSkillId": "visit.accept_stay",
           "choiceSkillIds": ["visit.accept_stay", "visit.offer_food", "abort.wakarimasen"]
@@ -243,6 +267,7 @@
           "id": "abort-open-question",
           "kind": "off_script",
           "prompt": "ほかに何か必要？",
+          "promptReading": "ほかになにかひつよう？",
           "meaning": "Do you need anything else?",
           "targetSkillId": "abort.wakarimasen",
           "choiceSkillIds": ["visit.accept_stay", "visit.ask_time", "abort.wakarimasen"]

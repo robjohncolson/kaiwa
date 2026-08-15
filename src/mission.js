@@ -1,5 +1,6 @@
 import { ABORT_TARGET_MS, PRODUCTION_GRADES } from "./production.js";
 import { shuffleCandidates } from "./wizard.js";
+import { validateSpeechReading } from "./listening.js";
 
 export function missionLineIndex(content) {
   const lines = new Map();
@@ -39,7 +40,8 @@ export function validateMissionPack(pack, content, tree) {
       throw new TypeError(`${mission.id} needs at least two steps.`);
     }
     for (const step of mission.steps) {
-      if (!step.id || !step.prompt || !step.meaning) throw new TypeError(`${mission.id} has an incomplete step.`);
+      if (!step.id || !step.prompt || !step.promptReading || !step.meaning) throw new TypeError(`${mission.id} has an incomplete step.`);
+      validateSpeechReading(step.promptReading, `${mission.id}.${step.id}.promptReading`);
       if (!skillIds.has(step.targetSkillId) || !lines.has(step.targetSkillId)) {
         throw new TypeError(`${mission.id} targets unknown fixed line ${step.targetSkillId}.`);
       }

@@ -10,7 +10,7 @@ export const GUIDED_SPEAK_COUNT = 2;
 export const GUIDED_FACET_COUNT = 2;
 export const GUIDED_TARGET_MINUTES = 5;
 
-const WORD_FACET_MODES = new Set(["reading", "word-form", "word-meaning", "word-recall"]);
+const WORD_FACET_MODES = new Set(["reading", "listening", "word-form", "word-meaning", "word-recall"]);
 const SEMANTIC_FACET_MODES = new Set(["word-meaning", "word-recall"]);
 const PHRASE_MODES = new Set(["meaning", "reply"]);
 
@@ -83,6 +83,7 @@ export function buildGuidedSession({ items, speakingItems, tree, readings, missi
   const phrases = rankedCards(items, tree, readings, state, now, "phrase")
     .slice(0, GUIDED_PHRASE_COUNT);
   const facetCards = uniqueBySkill([
+    rankedCards(items, tree, readings, state, now, "listening")[0],
     rankedCards(items, tree, readings, state, now, "reading")[0],
     rankedCards(items, tree, readings, state, now, "word-form")[0],
     rankedCards(items, tree, readings, state, now, "semantic")[0]
@@ -153,7 +154,7 @@ export function currentSessionCard(session, items) {
   return items.find((item) => item.id === id) ?? null;
 }
 
-export function recordSessionCard(session, item, correct, now = Date.now()) {
+export function recordSessionCard(session, item, correct, now = Date.now(), { assisted = false } = {}) {
   if (!session || !new Set(["cards", "recognition", "facets"]).has(session.phase)) {
     throw new TypeError("No guided card is active.");
   }
@@ -168,6 +169,7 @@ export function recordSessionCard(session, item, correct, now = Date.now()) {
     skillId: item.skillId,
     mode: item.mode,
     correct: Boolean(correct),
+    assisted: Boolean(assisted),
     observedAt: now
   }];
   if (session.phase === "cards") return {
@@ -252,10 +254,11 @@ export function summarizeGuidedSession(session, { state, tree, readings, items, 
   const needsFurigana = readingItems
     .filter((item) => !readingIsReady(readings, state.skills[item.skillId]))
     .sort((a, b) => probabilityKnown(state.skills[a.skillId]) - probabilityKnown(state.skills[b.skillId]));
-  const correctCards = session.outcomes.filter((outcome) => outcome.correct).length;
+  const correctCards = session.outcomes.filter((outcome) => outcome.correct && !outcome.assisted).length;
   const phraseOutcomes = session.outcomes.filter((outcome) => PHRASE_MODES.has(outcome.mode));
   const readingOutcomes = session.outcomes.filter((outcome) => outcome.mode === "reading");
   const facetOutcomes = session.outcomes.filter((outcome) => WORD_FACET_MODES.has(outcome.mode));
+  const listeningOutcomes = session.outcomes.filter((outcome) => outcome.mode === "listening");
   const weakestFacets = facetItems
     .filter((item) => !facetIsReady(item, tree, readings, state))
     .sort((a, b) => probabilityKnown(state.skills[a.skillId]) - probabilityKnown(state.skills[b.skillId]));
@@ -270,8 +273,10 @@ export function summarizeGuidedSession(session, { state, tree, readings, items, 
     correctCards,
     phraseCorrect: phraseOutcomes.filter((outcome) => outcome.correct).length,
     phraseTotal: phraseOutcomes.length,
-    facetCorrect: facetOutcomes.filter((outcome) => outcome.correct).length,
+    facetCorrect: facetOutcomes.filter((outcome) => outcome.correct && !outcome.assisted).length,
     facetTotal: facetOutcomes.length,
+    listeningCorrect: listeningOutcomes.filter((outcome) => outcome.correct && !outcome.assisted).length,
+    listeningTotal: listeningOutcomes.length,
     readingCorrect: readingOutcomes.filter((outcome) => outcome.correct).length,
     readingTotal: readingOutcomes.length,
     spokenClean: (session.speakingOutcomes ?? []).filter((outcome) => outcome.grade === "clean").length,

@@ -40,6 +40,7 @@ import {
   validateMissionPack
 } from "./mission.js";
 import { fieldCounts, latestFieldOutcome, recordFieldOutcome } from "./field.js";
+import { speechCapability, speakJapanese, stopJapaneseSpeech } from "./listening.js";
 import { ABORT_TARGET_MS, applyProductionObservation, productionIsReady } from "./production.js";
 import {
   archiveCompletedRepair,
@@ -150,12 +151,14 @@ let state;
 let screen = { name: "home", data: {} };
 let cardUi = null;
 let missionChoiceUi = null;
+let missionAudioUi = null;
 let completedMissionRun = null;
 let tickerId = null;
 let passport = { raw: null, preview: null, file: null, shareSupported: false };
 let overlayDraft = null;
 let basePacks = null;
 let overlayStatus = { installed: false, error: null };
+let deviceSpeech = speechCapability();
 let roleplay = {
   available: false,
   model: null,
@@ -301,6 +304,7 @@ function save() {
 
 function show(name, data = {}) {
   stopTicker();
+  if (screen.name !== name) stopJapaneseSpeech();
   screen = { name, data };
   render();
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -324,6 +328,11 @@ function breakdownSession() {
 
 function speakingAttempt() {
   return state.speaking?.active ?? null;
+}
+
+function schedulableItems() {
+  if (deviceSpeech.status === "ready" || state.focus?.skillId?.startsWith("listening.")) return items;
+  return items.filter((item) => item.mode !== "listening");
 }
 
 function sessionHasCardPhase(session = guidedSession()) {
@@ -496,11 +505,13 @@ function readinessOrbit(value, total, label) {
 
 function renderHome() {
   const now = Date.now();
-  const next = selectNextItem(items, tree, state);
+  const next = selectNextItem(schedulableItems(), tree, state);
   const showtime = showtimeStatus(state.route, state.field, now);
   const routedScenario = scenarioById(showtime.scenarioId);
   const recognizeReady = speakingItems.filter((line) => skillIsReady(tree, state.skills[line.skillId])).length;
   const say = speakingReadiness(speakingItems, state);
+  const listeningItems = items.filter((item) => item.mode === "listening");
+  const hearReady = listeningItems.filter((item) => skillIsReady(tree, state.skills[item.skillId])).length;
   const isShowtime = showtime.phase === "showtime";
   const needsFieldLog = showtime.phase === "field";
   screenHeading(
@@ -527,7 +538,8 @@ function renderHome() {
   const orbits = element("div", "readiness-orbits");
   orbits.append(
     readinessOrbit(recognizeReady, speakingItems.length, "recognize-ready"),
-    readinessOrbit(say.ready, say.total, "say-ready")
+    readinessOrbit(say.ready, say.total, "say-ready"),
+    readinessOrbit(hearReady, listeningItems.length, "hear-ready")
   );
   dom.screen.append(orbits, element("p", "screen-copy", `${state.totalReviews} objective checks · ${state.totalProduction ?? 0} spoken observations · progress stays on this device.`));
   if (new Set(["scheduled", "showtime"]).has(showtime.phase)) {
@@ -592,6 +604,7 @@ function toolChoices() {
   }
   result.push(
     { id: "card", title: "One quick card", copy: "Let the cram scheduler pick a single Japanese-first check.", open: () => showCard("solo") },
+    { id: "listen", title: "Listen to a word", copy: "Hear one kana-authored word through the Japanese device voice, then identify its trip meaning.", open: () => showScenarioChooser("listen") },
     { id: "speak", title: "Speak a fixed line", copy: "Retrieve any prepared learner line aloud before revealing it. No microphone listens.", open: () => showScenarioChooser("speak") },
     { id: "mission", title: "Closed-loop mission", copy: "Choose a fixed scenario, mode, and furigana level step by step.", open: () => showMissionChooser() },
     { id: "route", title: "Next real event", copy: "Boost one scenario because a real conversation is approaching.", open: () => show("route-home") },
@@ -636,6 +649,7 @@ function renderScenarioChooser() {
     field: "Which conversation happened?",
     route: "Which event is coming up?",
     speak: "Which situation do you want to say?",
+    listen: "Which situation do you want to hear?",
     roleplay: "Which partner scenario?"
   };
   screenHeading("CHOOSE A SCENARIO", scenario.title, scenario.purpose);
@@ -643,7 +657,9 @@ function renderScenarioChooser() {
   if (scenario.id !== "__back") {
     const counts = fieldCounts(state.field, scenario.id);
     const say = speakingReadiness(speakingItems, state, { scenarioId: scenario.id });
-    addMeta(`${scenario.items.length} cards`, `${scenario.allowedUserLines.length} fixed lines`, `${say.ready}/${say.total} say-ready`, `${Object.values(counts).reduce((a, b) => a + b, 0)} field logs`);
+    const listening = items.filter((item) => item.scenarioId === scenario.id && item.mode === "listening");
+    const hearReady = listening.filter((item) => skillIsReady(tree, state.skills[item.skillId])).length;
+    addMeta(`${scenario.items.length} cards`, `${scenario.allowedUserLines.length} fixed lines`, `${say.ready}/${say.total} say-ready`, `${hearReady}/${listening.length} hear-ready`, `${Object.values(counts).reduce((a, b) => a + b, 0)} field logs`);
   }
   setActions(
     { label: "Another →", onClick: () => showScenarioChooser(flow, cycleIndex(index, scenarios.length)) },
@@ -656,6 +672,10 @@ function chooseScenario(flow, scenario) {
   if (flow === "sheet") return show("sheet-line", { scenarioId: scenario.id, lineIndex: 0 });
   if (flow === "field") return show("field-question", { scenarioId: scenario.id, step: FIELD_DECISION_START });
   if (flow === "speak") return beginSoloSpeaking(scenario.id, 0);
+  if (flow === "listen") {
+    const item = selectNextItem(items.filter((candidate) => candidate.mode === "listening" && candidate.scenarioId === scenario.id), tree, state);
+    return item ? showCard("solo", item.id) : showToast("No listening word is available in this scenario yet");
+  }
   if (flow === "route") return show("route-time", { scenarioId: scenario.id, index: 0 });
   if (flow === "roleplay") return show("roleplay-line", { scenarioId: scenario.id, index: 0 });
 }
@@ -711,7 +731,7 @@ function showCard(context, explicitItemId = null) {
   if (context === "breakdown") item = currentBreakdownCard(breakdownSession(), items, breakdownSourceItem());
   else if (context === "repair") item = currentRepairCard(repairSession(), items);
   else if (context === "session") item = currentSessionCard(guidedSession(), items);
-  else item = items.find((candidate) => candidate.id === explicitItemId) ?? selectNextItem(items, tree, state);
+  else item = items.find((candidate) => candidate.id === explicitItemId) ?? selectNextItem(schedulableItems(), tree, state);
   if (!item) return context === "breakdown" ? show("breakdown-overview") : show("home");
   if (screen.name !== "card" || cardUi?.itemId !== item.id) {
     const options = generatedOptionsForAttempt(item, readings, state.skills[item.skillId]?.attempts ?? 0);
@@ -724,6 +744,10 @@ function showCard(context, explicitItemId = null) {
       correct: null,
       selectedOptionId: null,
       diagnosticSkillIds: [],
+      audioPlayed: false,
+      audioReady: item.mode !== "listening",
+      transcriptRevealed: false,
+      assisted: false,
       options,
       optionIds: shuffleCandidates(options).map((option) => option.id)
     };
@@ -756,8 +780,11 @@ function renderCard() {
   const isWordFormCard = item.facet === "written-form";
   const isMeaningCard = item.facet === "meaning-recognition";
   const isRecallCard = item.facet === "meaning-recall";
+  const isListeningCard = item.mode === "listening";
   const japaneseCandidate = isReadingCard || isKanjiCard || isWordFormCard || isRecallCard;
-  const cardTitle = isKanjiCard
+  const cardTitle = isListeningCard
+    ? "Hear the word before reading it."
+    : isKanjiCard
     ? "Rebuild the written word."
     : isReadingCard
       ? "Match the word to its reading."
@@ -768,7 +795,9 @@ function renderCard() {
           : isRecallCard
             ? "Recall the Japanese word."
             : "Read the Japanese first.";
-  const chromeTitle = isKanjiCard
+  const chromeTitle = isListeningCard
+    ? "What did you hear?"
+    : isKanjiCard
     ? "Which kanji fits?"
     : isReadingCard
       ? "Does this reading match?"
@@ -779,7 +808,9 @@ function renderCard() {
           : isRecallCard
             ? "Which Japanese word fits?"
             : "Is this the answer?";
-  const direction = isKanjiCard
+  const direction = isListeningCard
+    ? "Audio → meaning"
+    : isKanjiCard
     ? "Reading → written form"
     : isReadingCard
       ? "Written form → hiragana"
@@ -802,9 +833,23 @@ function renderCard() {
     progress: cardUi.answered ? 0.72 : 0.52
   });
 
-  const prompt = element("p", "prompt-japanese");
-  appendJapanese(prompt, item.prompt, { neverShow: isReadingCard || isKanjiCard || isWordFormCard || isRecallCard });
-  dom.screen.append(prompt);
+  if (isListeningCard && !cardUi.transcriptRevealed && !cardUi.answered) {
+    const audio = element("article", "audio-card");
+    audio.append(
+      element("p", "candidate-label", cardUi.audioPlayed ? "AUDIO HEARD" : "AUDIO FIRST"),
+      element("p", "audio-symbol", "♪"),
+      element("p", "screen-copy", deviceSpeech.status === "ready"
+        ? cardUi.audioPlayed ? "Replay as often as useful, then begin the meaning choices." : "The written word stays hidden until feedback."
+        : deviceSpeech.reason)
+    );
+    dom.screen.append(audio);
+  } else {
+    const prompt = element("p", "prompt-japanese");
+    appendJapanese(prompt, item.prompt, isListeningCard
+      ? { alwaysShow: true }
+      : { neverShow: isReadingCard || isKanjiCard || isWordFormCard || isRecallCard });
+    dom.screen.append(prompt);
+  }
   addMeta(
     direction,
     `${item.options.length} candidates`
@@ -819,6 +864,23 @@ function renderCard() {
   const reasonCard = element("aside", "practice-reason");
   reasonCard.append(element("p", "candidate-label", "WHY THIS CARD"), element("p", "practice-reason-text", reason));
   dom.screen.append(reasonCard);
+
+  if (isListeningCard && !cardUi.audioReady && !cardUi.answered) {
+    if (deviceSpeech.status === "ready") {
+      setActions(
+        cardUi.audioPlayed
+          ? { label: "Replay", onClick: () => playCardAudio(item) }
+          : { label: "Show text", onClick: showListeningText },
+        { label: cardUi.audioPlayed ? "Start choices" : "Play audio", onClick: () => cardUi.audioPlayed ? startListeningChoices() : playCardAudio(item) }
+      );
+    } else {
+      setActions(
+        { label: "Home", onClick: () => show("home") },
+        { label: deviceSpeech.status === "loading" ? "Use text" : "Text fallback", onClick: showListeningText }
+      );
+    }
+    return;
+  }
 
   if (!cardUi.answered) {
     const options = cardOptions(item);
@@ -857,9 +919,13 @@ function renderCard() {
 
   const result = element("article", "result-card");
   result.dataset.result = cardUi.correct ? "correct" : "incorrect";
-  result.append(element("p", "result-label", cardUi.correct ? "Correct" : "Review this one"));
+  result.append(element("p", "result-label", cardUi.correct
+    ? cardUi.assisted ? "Correct with text help" : "Correct"
+    : "Review this one"));
   const japanese = element("p", "line-japanese");
-  appendJapanese(japanese, item.answer.ja, isReadingCard || item.wordId ? { neverShow: true } : { alwaysShow: true });
+  appendJapanese(japanese, item.answer.ja, isListeningCard
+    ? { alwaysShow: true }
+    : isReadingCard || item.wordId ? { neverShow: true } : { alwaysShow: true });
   result.append(japanese);
   if (item.answer.reading) result.append(element("p", "answer-reading", item.answer.reading));
   const meaning = element("p", "line-meaning");
@@ -900,6 +966,37 @@ function renderCard() {
   setActions(left, { label: nextCardLabel(context), onClick: () => continueAfterCard(context) });
 }
 
+function playCardAudio(item) {
+  const itemId = item.id;
+  const result = speakJapanese(item.speech.reading, {
+    onError: () => {
+      if (cardUi?.itemId !== itemId) return;
+      deviceSpeech = { status: "unavailable", voice: null, reason: "The Japanese device voice could not play this word." };
+      render();
+    }
+  });
+  if (!result.ok) {
+    deviceSpeech = { status: result.status, voice: null, reason: result.reason };
+    return render();
+  }
+  cardUi.audioPlayed = true;
+  render();
+}
+
+function showListeningText() {
+  stopJapaneseSpeech();
+  cardUi.transcriptRevealed = true;
+  cardUi.audioReady = true;
+  cardUi.assisted = true;
+  render();
+}
+
+function startListeningChoices() {
+  stopJapaneseSpeech();
+  cardUi.audioReady = true;
+  render();
+}
+
 function answerCardCandidate(item, accepted) {
   const options = cardOptions(item);
   const option = options[cardUi.optionIndex];
@@ -936,7 +1033,9 @@ function applyCardResult(item, correct, now = Date.now()) {
   const sessionItem = currentSessionCard(session, items);
   if (context === "breakdown") {
     const active = breakdownSession();
-    state = active.phase === "retry" && active.round === "integration"
+    state = item.mode === "listening" && cardUi.assisted
+      ? recordAssistedObservation(state, item, now, { source: "hint" })
+      : active.phase === "retry" && active.round === "integration"
       ? recordRebuildObservation(state, item, correct, now)
       : applyObservation(
         state,
@@ -954,12 +1053,14 @@ function applyCardResult(item, correct, now = Date.now()) {
     save();
     return;
   }
-  state = applyObservation(state, item, correct, now);
+  state = item.mode === "listening" && cardUi.assisted
+    ? recordAssistedObservation(state, item, now, { source: "hint" })
+    : applyObservation(state, item, correct, now);
   if (repairItem?.id === item.id) {
     state = { ...state, repair: { ...state.repair, active: recordRepairCard(repair, item, correct, now) } };
   }
   if (sessionItem?.id === item.id) {
-    state = { ...state, session: { ...state.session, active: recordSessionCard(session, item, correct, now) } };
+    state = { ...state, session: { ...state.session, active: recordSessionCard(session, item, correct, now, { assisted: cardUi.assisted }) } };
   }
   if (!correct) {
     const breakdown = buildBreakdownSession({
@@ -1188,10 +1289,10 @@ function endBreakdown() {
 }
 
 function renderSessionIntro() {
-  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Recognize two lines, retrieve two aloud, check two weak word facets, then close one spoken mission.");
+  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Recognize two lines, retrieve two aloud, check two weak word facets—including ear-first work when available—then close one spoken mission.");
   setChrome({ title: "Ready to begin?", context: "Guided practice · step 1", progress: 0.18 });
   const stages = element("ol", "stage-list");
-  ["Recognize two Japanese prompts", "Say two fixed lines before reveal", "Check two weak word facets", "Speak the fixed loop and abort"].forEach((label, index) => {
+  ["Recognize two Japanese prompts", "Say two fixed lines before reveal", "Hear or read two weak word facets", "Hear, speak, and abort in the fixed loop"].forEach((label, index) => {
     stages.append(element("li", index === 0 ? "current" : "", label));
   });
   dom.screen.append(stages);
@@ -1211,7 +1312,7 @@ function startGuidedSession() {
     repair: archiveCompletedRepair(state.repair),
     session: archiveCompletedSession(state.session)
   };
-  const active = buildGuidedSession({ items, speakingItems, tree, readings, missionPack, state, now: Date.now() });
+  const active = buildGuidedSession({ items: schedulableItems(), speakingItems, tree, readings, missionPack, state, now: Date.now() });
   state = { ...state, session: { ...state.session, active } };
   save();
   cardUi = null;
@@ -1265,7 +1366,10 @@ function renderSessionSummary() {
   const metrics = element("ul", "metric-list");
   metrics.append(
     metric(`${summary.correctCards}/${summary.cardsTotal}`, "objective checks correct"),
-    metric(`${summary.facetCorrect}/${summary.facetTotal}`, "word facets correct"),
+    metric(`${summary.facetCorrect}/${summary.facetTotal}`, "word facets correct")
+  );
+  if (summary.listeningTotal) metrics.append(metric(`${summary.listeningCorrect}/${summary.listeningTotal}`, "ear-first checks unaided"));
+  metrics.append(
     metric(`${summary.spokenClean}/${summary.spokenTotal}`, "standalone lines clean"),
     metric(summary.missionOutcome ?? "complete", "spoken mission outcome")
   );
@@ -1737,6 +1841,7 @@ function launchManualMission(hideFurigana) {
 function startMissionRun(mission, options) {
   completedMissionRun = null;
   missionChoiceUi = null;
+  missionAudioUi = null;
   state = { ...state, mission: { ...state.mission, active: createMissionRun(mission, Date.now(), options) } };
   save();
 }
@@ -1750,20 +1855,43 @@ function ensureMissionChoice(run, step) {
   };
 }
 
+function ensureMissionAudio(run, step) {
+  const key = `${run.missionId}.${run.stepIndex}.${step.id}`;
+  if (missionAudioUi?.key !== key) missionAudioUi = {
+    key,
+    played: false,
+    ready: deviceSpeech.status === "unavailable",
+    transcriptRevealed: deviceSpeech.status === "unavailable"
+  };
+}
+
 function renderMissionTurn() {
   const run = state.mission.active;
   const mission = missionForId(run?.missionId);
   if (!run || !mission) return show("home");
   const step = mission.steps[run.stepIndex];
   ensureMissionChoice(run, step);
+  ensureMissionAudio(run, step);
   const isAbort = step.targetSkillId === "abort.wakarimasen";
   screenHeading(isAbort ? "OFF SCRIPT" : "PARTNER", `Turn ${run.stepIndex + 1} of ${mission.steps.length}`, run.mode === "production"
-    ? isAbort ? "Say the abort now. Target five seconds." : "Say your fixed response aloud. No microphone is listening."
-    : isAbort ? "Choose the pre-decided recovery. Do not improvise." : "Decide whether the candidate is your fixed response.");
-  setChrome({ title: mission.title, context: `${run.mode} · ${run.hideFurigana ? "no furigana" : "adaptive furigana"}`, progress: 0.48 + (run.stepIndex / mission.steps.length) * 0.38 });
-  const prompt = element("p", "prompt-japanese");
-  appendJapanese(prompt, step.prompt, { neverShow: run.hideFurigana });
-  dom.screen.append(prompt);
+    ? !missionAudioUi.ready ? "Hear your partner first. Their written line stays hidden." : isAbort ? "Say the abort now. Target five seconds." : "Say your fixed response aloud. No microphone is listening."
+    : !missionAudioUi.ready ? "Hear your partner first. Their written line stays hidden." : isAbort ? "Choose the pre-decided recovery. Do not improvise." : "Decide whether the candidate is your fixed response.");
+  setChrome({ title: mission.title, context: `${run.mode} · ${deviceSpeech.status === "ready" ? "audio-first" : "text fallback"} · ${run.hideFurigana ? "no furigana" : "furigana supported"}`, progress: 0.48 + (run.stepIndex / mission.steps.length) * 0.38 });
+  if (missionAudioUi.transcriptRevealed || run.awaitingAdvance) {
+    const prompt = element("p", "prompt-japanese");
+    appendJapanese(prompt, step.prompt, { alwaysShow: !run.hideFurigana, neverShow: run.hideFurigana });
+    dom.screen.append(prompt);
+  } else if (!missionAudioUi.ready) {
+    const audio = element("article", "audio-card");
+    audio.append(
+      element("p", "candidate-label", missionAudioUi.played ? "PARTNER AUDIO HEARD" : "PARTNER AUDIO"),
+      element("p", "audio-symbol", "♪"),
+      element("p", "screen-copy", deviceSpeech.status === "ready"
+        ? missionAudioUi.played ? "Replay if useful, then respond without seeing the transcript." : "Listen before choosing or speaking your fixed response."
+        : deviceSpeech.reason)
+    );
+    dom.screen.append(audio);
+  }
   if (run.currentHintUsed || run.awaitingAdvance) {
     const meaning = element("p", "line-meaning");
     appendJapanese(meaning, step.meaning, { alwaysShow: true });
@@ -1771,8 +1899,75 @@ function renderMissionTurn() {
   }
 
   if (run.awaitingAdvance) return renderMissionFeedback(run, mission, step);
+  if (!missionAudioUi.ready) return renderMissionAudioDecision(run, step);
   if (run.mode === "production") return renderProductionDecision(run, mission, step);
   renderRecognitionDecision(run, mission, step);
+}
+
+function renderMissionAudioDecision(run, step) {
+  if (deviceSpeech.status === "ready") {
+    setActions(
+      missionAudioUi.played
+        ? { label: "Replay", onClick: () => playMissionAudio(run, step) }
+        : { label: "Show text", onClick: revealMissionTranscript },
+      { label: missionAudioUi.played ? "Respond" : "Play audio", onClick: () => missionAudioUi.played ? beginMissionResponse() : playMissionAudio(run, step) }
+    );
+    return;
+  }
+  setActions(
+    { label: "End run", onClick: confirmEndMission },
+    { label: "Text fallback", onClick: beginMissionTextFallback }
+  );
+}
+
+function playMissionAudio(run, step) {
+  const key = missionAudioUi.key;
+  const result = speakJapanese(step.promptReading, {
+    onError: () => {
+      if (missionAudioUi?.key !== key) return;
+      deviceSpeech = { status: "unavailable", voice: null, reason: "The Japanese device voice could not play this partner line." };
+      render();
+    }
+  });
+  if (!result.ok) {
+    deviceSpeech = { status: result.status, voice: null, reason: result.reason };
+    return render();
+  }
+  missionAudioUi.played = true;
+  render();
+}
+
+function beginMissionResponse() {
+  stopJapaneseSpeech();
+  missionAudioUi.ready = true;
+  state = {
+    ...state,
+    mission: { ...state.mission, active: { ...state.mission.active, stepStartedAt: Date.now() } }
+  };
+  save();
+  render();
+}
+
+function revealMissionTranscript() {
+  stopJapaneseSpeech();
+  missionAudioUi.ready = true;
+  missionAudioUi.transcriptRevealed = true;
+  const run = revealMissionHint(state.mission.active);
+  state = { ...state, mission: { ...state.mission, active: { ...run, stepStartedAt: Date.now() } } };
+  save();
+  render();
+}
+
+function beginMissionTextFallback() {
+  stopJapaneseSpeech();
+  missionAudioUi.ready = true;
+  missionAudioUi.transcriptRevealed = true;
+  state = {
+    ...state,
+    mission: { ...state.mission, active: { ...state.mission.active, stepStartedAt: Date.now() } }
+  };
+  save();
+  render();
 }
 
 function renderProductionDecision(run, mission, step) {
@@ -1929,6 +2124,7 @@ function advanceMission() {
   const mission = missionForId(active.missionId);
   const run = advanceMissionRun(active, mission);
   missionChoiceUi = null;
+  missionAudioUi = null;
   if (!run.completed) {
     state = { ...state, mission: { ...state.mission, active: run } };
     save();
@@ -2066,7 +2262,7 @@ function renderMapHome() {
 }
 
 function currentMap() {
-  return buildSkillMap({ content, tree, readings, state, currentItem: selectNextItem(items, tree, state) });
+  return buildSkillMap({ content, tree, readings, state, currentItem: selectNextItem(schedulableItems(), tree, state) });
 }
 
 function renderMapIsland() {
@@ -2087,6 +2283,7 @@ function renderMapIsland() {
       island.conversationReady ? "conversation ready" : "conversation not ready",
       `${island.recognizeReady}/${island.recognizeTotal} recognize-ready`,
       `${island.sayReady}/${island.sayTotal} say-ready`,
+      `${island.hearingReady}/${island.hearingTotal} hear-ready`,
       `${island.facetReady}/${island.facetTotal} word facets`,
       `${island.readingReady}/${island.readingTotal} sounds retired`
     );
@@ -2718,6 +2915,21 @@ function updateNetworkBadge() {
   dom.badge.classList.toggle("online", online);
 }
 
+function refreshDeviceSpeech() {
+  const next = speechCapability();
+  const changed = next.status !== deviceSpeech.status || next.voice?.name !== deviceSpeech.voice?.name;
+  deviceSpeech = next;
+  if (changed && state && new Set(["home", "card", "mission-turn", "session-intro"]).has(screen.name)) render();
+}
+
+function watchDeviceVoices() {
+  const synthesis = globalThis.speechSynthesis;
+  if (!synthesis) return;
+  if (typeof synthesis.addEventListener === "function") synthesis.addEventListener("voiceschanged", refreshDeviceSpeech);
+  else synthesis.onvoiceschanged = refreshDeviceSpeech;
+  refreshDeviceSpeech();
+}
+
 async function start() {
   try {
     const [baseContent, baseTree, baseReadings, baseMissionPack] = await Promise.all([
@@ -2754,6 +2966,7 @@ async function start() {
     window.addEventListener("online", updateNetworkBadge);
     window.addEventListener("offline", updateNetworkBadge);
     updateNetworkBadge();
+    watchDeviceVoices();
     dom.loading.hidden = true;
     render();
     setupRoleplay();

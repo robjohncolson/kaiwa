@@ -46,7 +46,8 @@ test("a guided session queues recognition, speaking, facets, and a route-relevan
   assert.equal(session.targetMinutes, 5);
   assert.equal(session.cardIds.length, 4);
   assert.ok(queued.slice(0, 2).every((item) => ["meaning", "reply"].includes(item.mode)));
-  assert.ok(queued.slice(2).every((item) => ["reading", "word-form", "word-meaning", "word-recall"].includes(item.mode)));
+  assert.ok(queued.slice(2).every((item) => ["listening", "reading", "word-form", "word-meaning", "word-recall"].includes(item.mode)));
+  assert.ok(queued.slice(2).some((item) => item.mode === "listening"));
   assert.equal(session.speakLineSkillIds.length, 2);
   assert.ok(session.speakLineSkillIds.every((skillId) =>
     speakingItems.find((item) => item.skillId === skillId).scenarioIds.includes("family-visit")
@@ -126,6 +127,7 @@ test("session summary reports independent facet readiness and furigana retiremen
   assert.equal(summary.missionOutcome, "clean");
   assert.equal(summary.facetTotal, 2);
   assert.equal(summary.facetCorrect, 2);
+  assert.equal(summary.listeningTotal, 1);
   assert.equal(summary.spokenTotal, 2);
   assert.equal(summary.newlyRetiredReadings.length, 1);
   assert.equal(summary.needsFurigana.length, 0);

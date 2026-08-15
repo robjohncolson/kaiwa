@@ -11,6 +11,7 @@ import {
   generatedOptionsForAttempt,
   itemTestsReading,
   kanjiCharacters,
+  listeningSkillId,
   readingCharacterSkillId,
   readingIsReady,
   readingEntriesIn,
@@ -136,7 +137,7 @@ test("multi-kanji readings generate remediation-only cards for every written cha
   });
 });
 
-test("every word gains independent sound, form, meaning, and recall facets", async () => {
+test("every word gains independent listening, sound, form, meaning, and recall facets", async () => {
   const [content, baseTree, readings] = await Promise.all([
     readJson("../data/scenarios.json"),
     readJson("../data/tree.json"),
@@ -146,15 +147,17 @@ test("every word gains independent sound, form, meaning, and recall facets", asy
   const nodeIds = new Set(tree.nodes.map((node) => node.id));
   const cards = createWordFacetItems(readings, content);
 
-  assert.equal(cards.length, readings.entries.length * 3);
+  assert.equal(cards.length, readings.entries.length * 4);
   for (const entry of readings.entries) {
     const wordCards = cards.filter((card) => card.wordId === entry.id);
     assert.deepEqual(wordCards.map((card) => card.facet), [
+      "listening-comprehension",
       "written-form",
       "meaning-recognition",
       "meaning-recall"
     ]);
     assert.ok(nodeIds.has(readingSkillId(entry)));
+    assert.ok(nodeIds.has(listeningSkillId(entry)));
     assert.ok(nodeIds.has(wordFormSkillId(entry)));
     assert.ok(nodeIds.has(wordMeaningSkillId(entry)));
     assert.ok(nodeIds.has(wordRecallSkillId(entry)));
@@ -164,6 +167,8 @@ test("every word gains independent sound, form, meaning, and recall facets", asy
       .filter((option) => !option.correct)
       .every((option) => option.diagnosticSkillIds.every((skillId) => nodeIds.has(skillId)))));
     assert.ok(tree.decompositions.some((edge) => edge.from === readingSkillId(entry) && edge.to === wordRecallSkillId(entry)));
+    assert.ok(tree.decompositions.some((edge) => edge.from === readingSkillId(entry) && edge.to === listeningSkillId(entry)));
+    assert.ok(tree.decompositions.some((edge) => edge.from === wordMeaningSkillId(entry) && edge.to === listeningSkillId(entry)));
     assert.ok(tree.decompositions.some((edge) => edge.from === wordFormSkillId(entry) && edge.to === wordRecallSkillId(entry)));
     assert.ok(tree.decompositions.some((edge) => edge.from === wordMeaningSkillId(entry) && edge.to === wordRecallSkillId(entry)));
   }
@@ -282,6 +287,9 @@ test("every generated card has one distinct answer and rotates reusable distract
   const first = new Set(generatedOptionsForAttempt(recall, readings, 0).map((option) => option.label));
   const second = new Set(generatedOptionsForAttempt(recall, readings, 1).map((option) => option.label));
   assert.notDeepEqual(first, second);
+  const listening = cards.find((card) => card.id === "listening-card.henkin");
+  assert.equal(listening.speech.reading, "へんきん");
+  assert.equal(listening.options.find((option) => option.correct).label, "refund");
 
   const invalidReadings = structuredClone(readings);
   invalidReadings.entries[0].distractors = [invalidReadings.entries[0].reading, "べつ"];

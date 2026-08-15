@@ -69,6 +69,8 @@ test("mission pack is closed-loop fixed content with a final abort", async () =>
   );
   assert.ok(missionLineIndex(content).has("abort.wakarimasen"));
   assert.ok(pack.missions.every((mission) => mission.steps.at(-1).kind === "off_script"));
+  assert.ok(pack.missions.flatMap((mission) => mission.steps).every((step) => step.promptReading));
+  assert.equal(missionById(pack, "family-visit-loop").steps.find((step) => step.id === "choose-time").promptReading, "なんじでもいいよ。");
 });
 
 test("an unaided fixed-line run completes cleanly and records local metrics", async () => {

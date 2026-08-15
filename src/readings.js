@@ -1,4 +1,5 @@
 import { probabilityKnown } from "./mastery.js";
+import { validateSpeechReading } from "./listening.js";
 
 const HAN = /\p{Script=Han}/u;
 
@@ -20,6 +21,10 @@ export function readingCharacterSkillId(entry, index) {
   return `reading-character.${entry.id}.${index}`;
 }
 
+export function listeningSkillId(entry) {
+  return `listening.${entry.id}`;
+}
+
 export function wordFormSkillId(entry) {
   return `word-form.${entry.id}`;
 }
@@ -35,6 +40,7 @@ export function wordRecallSkillId(entry) {
 export function wordFacetSkillIds(entry) {
   return [
     readingSkillId(entry),
+    listeningSkillId(entry),
     wordFormSkillId(entry),
     wordMeaningSkillId(entry),
     wordRecallSkillId(entry)
@@ -65,14 +71,18 @@ export function augmentTreeWithReadings(tree, readings) {
   };
   for (const entry of readings.entries) {
     const readingId = readingSkillId(entry);
+    const listeningId = listeningSkillId(entry);
     const formId = wordFormSkillId(entry);
     const meaningId = wordMeaningSkillId(entry);
     const recallId = wordRecallSkillId(entry);
     addNode(readingId, `${entry.term} · ${entry.reading}`, "reading");
+    addNode(listeningId, `${entry.reading} heard → ${entry.meaning}`, "listening");
     addNode(formId, `${entry.reading} → ${entry.term}`, "written-form");
     addNode(meaningId, `${entry.term} · ${entry.meaning}`, "meaning");
     addNode(recallId, `${entry.meaning} → ${entry.term}`, "recall");
     addDecomposition(readingId, recallId);
+    addDecomposition(readingId, listeningId);
+    addDecomposition(meaningId, listeningId);
     addDecomposition(formId, recallId);
     addDecomposition(meaningId, recallId);
     const characters = kanjiCharacters(entry.term);
@@ -210,6 +220,7 @@ function facetOptions(entry, readings, { facet, labelFor, diagnosticFor, salt = 
 export function createWordFacetItems(readings, contentPack) {
   const scenarios = new Map(contentPack.scenarios.map((scenario) => [scenario.id, scenario]));
   return readings.entries.flatMap((entry) => {
+    validateSpeechReading(entry.reading, `Reading entry ${entry.id}`);
     const scenario = scenarios.get(entry.scenarioId) ?? contentPack.scenarios[0];
     const shared = {
       wordId: entry.id,
@@ -218,6 +229,32 @@ export function createWordFacetItems(readings, contentPack) {
       scenarioPurpose: scenario.purpose
     };
     return [
+      {
+        ...shared,
+        id: `listening-card.${entry.id}`,
+        skillId: listeningSkillId(entry),
+        mode: "listening",
+        facet: "listening-comprehension",
+        priority: (entry.priority ?? 0.9) * 1.06,
+        prompt: entry.term,
+        instruction: "Hear the word first, then choose its meaning. Furigana appears after the attempt or whenever you ask for text help.",
+        speech: { reading: entry.reading },
+        options: facetOptions(entry, readings, {
+          facet: "listening-comprehension",
+          labelFor: (candidate) => candidate.meaning,
+          diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)]
+        }),
+        answer: {
+          ja: entry.term,
+          reading: entry.reading,
+          meaning: entry.meaning,
+          note: "This listening BKT is separate from reading the written word. Replays are free; revealing text makes the attempt assisted and neutral."
+        },
+        zoom: {
+          context: entry.context ?? `${entry.term}（${entry.reading}）`,
+          breakdown: `Heard ${entry.reading} → ${entry.meaning}`
+        }
+      },
       {
         ...shared,
         id: `word-form-card.${entry.id}`,
@@ -331,6 +368,14 @@ export function generatedOptionsForAttempt(item, readings, attempt = 0) {
   if (!entry) throw new TypeError(`Unknown generated-card word ${item.wordId}.`);
   const salt = Math.max(0, Number.isInteger(attempt) ? attempt : 0);
   if (item.mode === "reading") return orderedOptions(entry, readings, salt);
+  if (item.mode === "listening") {
+    return facetOptions(entry, readings, {
+      facet: "listening-comprehension",
+      labelFor: (candidate) => candidate.meaning,
+      diagnosticFor: (candidate) => [wordMeaningSkillId(candidate)],
+      salt
+    });
+  }
   if (item.mode === "word-form") {
     return facetOptions(entry, readings, {
       facet: "written-form",

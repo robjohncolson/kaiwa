@@ -84,6 +84,7 @@ test("distractor diagnoses reference real component skills", async () => {
     ...tree.nodes.map((node) => node.id),
     ...readings.entries.flatMap((entry) => [
       `reading.${entry.id}`,
+      `listening.${entry.id}`,
       `word-form.${entry.id}`,
       `word-meaning.${entry.id}`,
       `word-recall.${entry.id}`
