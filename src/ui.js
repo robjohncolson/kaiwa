@@ -77,9 +77,22 @@ import {
   buildGuidedSession,
   completeGuidedSession,
   currentSessionCard,
+  currentSessionSpeakingItem,
   recordSessionCard,
+  recordSessionSpeaking,
   summarizeGuidedSession
 } from "./session.js";
+import { routeAfterFieldOutcome, showtimeStatus } from "./showtime.js";
+import {
+  buildSpeakingItems,
+  createSpeakingAttempt,
+  gradeSpeakingAttempt,
+  revealSpeakingAttempt,
+  speakingItemsForScenario,
+  speakingReadiness,
+  validateSpeakingAttempt,
+  validateSpeakingItems
+} from "./speaking.js";
 import { buildSkillMap, practiceTargetFor, schedulerReason } from "./map.js";
 import {
   clearState,
@@ -132,6 +145,7 @@ let readings;
 let missionPack;
 let missionLines;
 let items = [];
+let speakingItems = [];
 let state;
 let screen = { name: "home", data: {} };
 let cardUi = null;
@@ -308,6 +322,14 @@ function breakdownSession() {
   return state.breakdown?.active ?? null;
 }
 
+function speakingAttempt() {
+  return state.speaking?.active ?? null;
+}
+
+function sessionHasCardPhase(session = guidedSession()) {
+  return Boolean(session && new Set(["cards", "recognition", "facets"]).has(session.phase));
+}
+
 function breakdownSourceItem(session = breakdownSession()) {
   if (!session) return null;
   return items.find((item) => item.id === session.sourceItemId)
@@ -342,10 +364,19 @@ function repairIsValid(repair) {
 
 function sessionIsValid(session) {
   if (!session) return true;
-  if (!new Set(["cards", "mission", "complete"]).has(session.phase)) return false;
+  if (!new Set(["cards", "recognition", "speaking", "facets", "mission", "complete"]).has(session.phase)) return false;
   if (!Array.isArray(session.cardIds) || !Array.isArray(session.outcomes)) return false;
   if (session.outcomes.length > session.cardIds.length) return false;
   if (!session.cardIds.every((id) => items.some((item) => item.id === id))) return false;
+  if (session.formatVersion === 2 && (session.recognitionCardIds?.length !== 2
+    || session.facetCardIds?.length !== 2
+    || session.speakLineSkillIds?.length !== 2
+    || !Array.isArray(session.speakingOutcomes)
+    || session.speakingOutcomes.length > session.speakLineSkillIds.length
+    || session.cardIds.join("\0") !== [...session.recognitionCardIds, ...session.facetCardIds].join("\0")
+    || !session.speakLineSkillIds.every((skillId) => speakingItems.some((item) =>
+      item.skillId === skillId && item.scenarioIds.includes(session.scenarioId)
+    )))) return false;
   return Boolean(missionById(missionPack, session.missionId));
 }
 
@@ -387,6 +418,11 @@ function breakdownIsValid(session) {
 
 function repairActivityState() {
   let changed = false;
+  const routeStatus = showtimeStatus(state.route, state.field);
+  if ((state.route?.scenarioId && !scenarioById(state.route.scenarioId)) || routeStatus.phase === "complete") {
+    state = { ...state, route: { scenarioId: null, eventAt: null } };
+    changed = true;
+  }
   if (!repairIsValid(state.repair?.active)) {
     state = { ...state, repair: { ...state.repair, active: null } };
     changed = true;
@@ -404,6 +440,10 @@ function repairActivityState() {
   }
   if (!sessionIsValid(state.session?.active)) {
     state = { ...state, session: { ...state.session, active: null } };
+    changed = true;
+  }
+  if (!validateSpeakingAttempt(state.speaking?.active, speakingItems, state.session?.active)) {
+    state = { ...state, speaking: { ...state.speaking, active: null } };
     changed = true;
   }
   if (!breakdownIsValid(state.breakdown?.active)) {
@@ -428,6 +468,7 @@ function repairActivityState() {
 }
 
 function primaryPracticeLabel() {
+  if (speakingAttempt()) return speakingAttempt().grade ? "Review spoken line" : "Resume speaking";
   if (breakdownSession()) return breakdownSession().phase === "waiting" ? "Continue practice" : "Resume breakdown";
   const guided = guidedSession();
   const repair = repairSession();
@@ -444,21 +485,65 @@ function primaryPracticeLabel() {
   return "Start practice";
 }
 
+function readinessOrbit(value, total, label) {
+  const wrapper = element("div", "readiness-orbit");
+  const orbit = element("div", "progress-orbit compact");
+  orbit.style.setProperty("--value", `${value / Math.max(1, total) * 360}deg`);
+  orbit.append(element("span", "", `${value}/${total}`));
+  wrapper.append(orbit, element("p", "candidate-label", label));
+  return wrapper;
+}
+
 function renderHome() {
+  const now = Date.now();
   const next = selectNextItem(items, tree, state);
-  const ready = Object.values(state.skills).filter((skill) => skillIsReady(tree, skill)).length;
-  screenHeading("TODAY'S TRIP LOOP", "What do you need right now?", "Practice opens the strongest next step automatically. Menu reveals every other tool one at a time.");
-  setChrome({ title: "Practice the next exchange.", context: "Home · two choices", progress: 0.08 });
+  const showtime = showtimeStatus(state.route, state.field, now);
+  const routedScenario = scenarioById(showtime.scenarioId);
+  const recognizeReady = speakingItems.filter((line) => skillIsReady(tree, state.skills[line.skillId])).length;
+  const say = speakingReadiness(speakingItems, state);
+  const isShowtime = showtime.phase === "showtime";
+  const needsFieldLog = showtime.phase === "field";
+  screenHeading(
+    isShowtime ? "SHOWTIME" : needsFieldLog ? "AFTER THE EVENT" : "TODAY'S TRIP LOOP",
+    routedScenario && (isShowtime || needsFieldLog) ? routedScenario.title : "What do you need right now?",
+    isShowtime
+      ? "Your fixed phone sheet is ready. The safe abort remains one tap away."
+      : needsFieldLog
+        ? "Record what actually happened. The result changes priority, never mastery."
+        : "Practice opens the strongest next step automatically. Menu reveals every other tool one at a time."
+  );
+  setChrome({
+    title: isShowtime ? "Use the prepared exchange." : needsFieldLog ? "Close the real-world loop." : "Practice the next exchange.",
+    context: isShowtime ? "Showtime · event within 30 minutes" : needsFieldLog ? "Showtime · field handoff" : "Home · two choices",
+    progress: isShowtime ? 0.92 : needsFieldLog ? 0.96 : 0.08
+  });
 
-  const card = addDataCard("NEXT PRIORITY");
+  const card = addDataCard(isShowtime ? "USE NOW" : needsFieldLog ? "LOG NEXT" : "NEXT PRIORITY");
   const nextTitle = element("p", "candidate-text");
-  appendJapanese(nextTitle, next?.scenarioTitle ?? "Loading…", { alwaysShow: true });
-  card.append(nextTitle, element("p", "screen-copy", next ? next.scenarioPurpose : "No practice item is currently available."));
-  const orbit = element("div", "progress-orbit");
-  orbit.style.setProperty("--value", `${Math.min(360, ready / Math.max(1, tree.nodes.length) * 360)}deg`);
-  orbit.append(element("span", "", `${ready}/${tree.nodes.length}`));
-  dom.screen.append(orbit, element("p", "screen-copy", `${state.totalReviews} objective checks · ${state.totalProduction ?? 0} spoken observations · progress stays on this device.`));
+  appendJapanese(nextTitle, routedScenario && (isShowtime || needsFieldLog) ? routedScenario.title : next?.scenarioTitle ?? "Loading…", { alwaysShow: true });
+  card.append(nextTitle, element("p", "screen-copy", routedScenario && (isShowtime || needsFieldLog)
+    ? routedScenario.purpose
+    : next ? next.scenarioPurpose : "No practice item is currently available."));
+  const orbits = element("div", "readiness-orbits");
+  orbits.append(
+    readinessOrbit(recognizeReady, speakingItems.length, "recognize-ready"),
+    readinessOrbit(say.ready, say.total, "say-ready")
+  );
+  dom.screen.append(orbits, element("p", "screen-copy", `${state.totalReviews} objective checks · ${state.totalProduction ?? 0} spoken observations · progress stays on this device.`));
+  if (new Set(["scheduled", "showtime"]).has(showtime.phase)) {
+    startTicker(() => {
+      if (showtimeStatus(state.route, state.field).phase !== showtime.phase) render();
+    });
+  }
 
+  if (isShowtime) return setActions(
+    { label: "Abort line", onClick: () => show("abort") },
+    { label: "Open sheet", onClick: () => show("sheet-line", { scenarioId: routedScenario.id, lineIndex: 0 }) }
+  );
+  if (needsFieldLog) return setActions(
+    { label: "Phone sheet", onClick: () => show("sheet-line", { scenarioId: routedScenario.id, lineIndex: 0 }) },
+    { label: "Log outcome", onClick: () => show("field-question", { scenarioId: routedScenario.id, step: FIELD_DECISION_START }) }
+  );
   setActions(
     { label: "Menu", onClick: () => show("tools", { index: 0 }) },
     { label: primaryPracticeLabel(), onClick: resumePractice }
@@ -466,6 +551,7 @@ function renderHome() {
 }
 
 function resumePractice() {
+  if (speakingAttempt()) return show("speaking-card");
   if (breakdownSession()?.phase === "waiting") {
     state = { ...state, breakdown: scheduleWaitingBreakdown(state.breakdown) };
     save();
@@ -489,7 +575,8 @@ function resumePractice() {
   if (state.mission.active) return show("mission-turn");
   const session = guidedSession();
   if (!session) return show("session-intro");
-  if (session.phase === "cards") return showCard("session");
+  if (sessionHasCardPhase(session)) return showCard("session");
+  if (session.phase === "speaking") return continueGuidedSpeaking();
   if (session.phase === "mission") return show("session-overview");
   return show("session-summary");
 }
@@ -505,6 +592,7 @@ function toolChoices() {
   }
   result.push(
     { id: "card", title: "One quick card", copy: "Let the cram scheduler pick a single Japanese-first check.", open: () => showCard("solo") },
+    { id: "speak", title: "Speak a fixed line", copy: "Retrieve any prepared learner line aloud before revealing it. No microphone listens.", open: () => showScenarioChooser("speak") },
     { id: "mission", title: "Closed-loop mission", copy: "Choose a fixed scenario, mode, and furigana level step by step.", open: () => showMissionChooser() },
     { id: "route", title: "Next real event", copy: "Boost one scenario because a real conversation is approaching.", open: () => show("route-home") },
     { id: "map", title: "Skill path", copy: "Browse scenarios and skills without opening a dense dashboard.", open: () => show("map-home") },
@@ -547,13 +635,15 @@ function renderScenarioChooser() {
     sheet: "Which live conversation?",
     field: "Which conversation happened?",
     route: "Which event is coming up?",
+    speak: "Which situation do you want to say?",
     roleplay: "Which partner scenario?"
   };
   screenHeading("CHOOSE A SCENARIO", scenario.title, scenario.purpose);
   setChrome({ title: titles[flow] ?? "Choose a scenario.", context: `${index + 1} of ${scenarios.length}`, progress: 0.22 });
   if (scenario.id !== "__back") {
     const counts = fieldCounts(state.field, scenario.id);
-    addMeta(`${scenario.items.length} cards`, `${scenario.allowedUserLines.length} fixed lines`, `${Object.values(counts).reduce((a, b) => a + b, 0)} field logs`);
+    const say = speakingReadiness(speakingItems, state, { scenarioId: scenario.id });
+    addMeta(`${scenario.items.length} cards`, `${scenario.allowedUserLines.length} fixed lines`, `${say.ready}/${say.total} say-ready`, `${Object.values(counts).reduce((a, b) => a + b, 0)} field logs`);
   }
   setActions(
     { label: "Another →", onClick: () => showScenarioChooser(flow, cycleIndex(index, scenarios.length)) },
@@ -565,6 +655,7 @@ function chooseScenario(flow, scenario) {
   if (scenario.id === "__back") return show("tools", { index: 0 });
   if (flow === "sheet") return show("sheet-line", { scenarioId: scenario.id, lineIndex: 0 });
   if (flow === "field") return show("field-question", { scenarioId: scenario.id, step: FIELD_DECISION_START });
+  if (flow === "speak") return beginSoloSpeaking(scenario.id, 0);
   if (flow === "route") return show("route-time", { scenarioId: scenario.id, index: 0 });
   if (flow === "roleplay") return show("roleplay-line", { scenarioId: scenario.id, index: 0 });
 }
@@ -903,7 +994,9 @@ function nextCardLabel(context) {
     return "Next part";
   }
   if (context === "repair" && repairSession()?.phase === "mission") return "Speak next";
-  if (context === "session" && guidedSession()?.phase === "mission") return "Speak next";
+  if (context === "session" && guidedSession()?.phase === "speaking") return "Say next";
+  if (context === "session" && guidedSession()?.phase === "mission") return "Start mission";
+  if (context === "session" && guidedSession()?.phase === "facets") return "Check a word";
   return "Next card";
 }
 
@@ -924,7 +1017,7 @@ function continueAfterCard(context) {
     return repairSession()?.phase === "cards" ? showCard("repair") : show("repair-overview");
   }
   if (context === "session") {
-    return guidedSession()?.phase === "cards" ? showCard("session") : show("session-overview");
+    return resumeGuidedSession();
   }
   showCard("solo");
 }
@@ -1057,7 +1150,7 @@ function startBreakdownRevisit() {
 function resumeAfterBreakdownContext(context) {
   if (context === "session") {
     if (!guidedSession()) return show("home");
-    return guidedSession().phase === "cards" ? showCard("session") : show("session-overview");
+    return resumeGuidedSession();
   }
   if (context === "repair") {
     if (!repairSession()) return show("home");
@@ -1095,10 +1188,10 @@ function endBreakdown() {
 }
 
 function renderSessionIntro() {
-  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Three weak phrase checks, then sound, written-form, and meaning facets before one speak-first closed-loop mission.");
+  screenHeading("GUIDED SESSION", "Five minutes. One path.", "Recognize two lines, retrieve two aloud, check two weak word facets, then close one spoken mission.");
   setChrome({ title: "Ready to begin?", context: "Guided practice · step 1", progress: 0.18 });
   const stages = element("ol", "stage-list");
-  ["Recognize three Japanese prompts", "Check three different word facets", "Speak the fixed loop and abort"].forEach((label, index) => {
+  ["Recognize two Japanese prompts", "Say two fixed lines before reveal", "Check two weak word facets", "Speak the fixed loop and abort"].forEach((label, index) => {
     stages.append(element("li", index === 0 ? "current" : "", label));
   });
   dom.screen.append(stages);
@@ -1118,24 +1211,39 @@ function startGuidedSession() {
     repair: archiveCompletedRepair(state.repair),
     session: archiveCompletedSession(state.session)
   };
-  const active = buildGuidedSession({ items, tree, readings, missionPack, state, now: Date.now() });
+  const active = buildGuidedSession({ items, speakingItems, tree, readings, missionPack, state, now: Date.now() });
   state = { ...state, session: { ...state.session, active } };
   save();
   cardUi = null;
-  showCard("session");
+  resumeGuidedSession();
+}
+
+function resumeGuidedSession() {
+  const session = guidedSession();
+  if (!session) return show("session-intro");
+  if (sessionHasCardPhase(session)) return showCard("session");
+  if (session.phase === "speaking") return continueGuidedSpeaking();
+  if (session.phase === "mission") return show("session-overview");
+  return show("session-summary");
 }
 
 function renderSessionOverview() {
   const session = guidedSession();
   if (!session) return show("session-intro");
-  if (session.phase === "cards") return showCard("session");
+  if (sessionHasCardPhase(session)) return showCard("session");
+  if (session.phase === "speaking") return continueGuidedSpeaking();
   if (session.phase === "complete") return show("session-summary");
   const mission = missionById(missionPack, session.missionId);
   screenHeading("GUIDED SESSION", "Cards complete. Speak now.", mission.purpose);
   setChrome({ title: "Finish the closed loop.", context: "Guided practice · spoken mission", progress: 0.82 });
   addDataCard("SELECTED FROM YOUR EVIDENCE", mission.title);
   const stages = element("ol", "stage-list");
-  stages.append(element("li", "done", "Three weak phrases"), element("li", "done", "Sound, form, and meaning facets"), element("li", "current", "Speak-first mission"));
+  stages.append(
+    element("li", "done", "Two recognition checks"),
+    element("li", "done", "Two standalone spoken recalls"),
+    element("li", "done", "Two word-facet checks"),
+    element("li", "current", "Speak-first mission")
+  );
   dom.screen.append(stages);
   setActions(
     { label: "End session", onClick: confirmEndSession },
@@ -1151,13 +1259,14 @@ function startGuidedMission(mission) {
 function renderSessionSummary() {
   const session = guidedSession();
   if (!session) return show("home");
-  const summary = summarizeGuidedSession(session, { state, tree, readings, items });
+  const summary = summarizeGuidedSession(session, { state, tree, readings, items, speakingItems });
   screenHeading("SESSION COMPLETE", "The loop is closed.", "Phrase, word-facet, and speaking evidence remain separate channels.");
   setChrome({ title: "Session complete.", context: "Guided practice · summary", progress: 1 });
   const metrics = element("ul", "metric-list");
   metrics.append(
     metric(`${summary.correctCards}/${summary.cardsTotal}`, "objective checks correct"),
     metric(`${summary.facetCorrect}/${summary.facetTotal}`, "word facets correct"),
+    metric(`${summary.spokenClean}/${summary.spokenTotal}`, "standalone lines clean"),
     metric(summary.missionOutcome ?? "complete", "spoken mission outcome")
   );
   if (summary.production) metrics.append(metric(`${summary.production.clean}/${summary.production.total}`, "spoken lines clean"));
@@ -1187,10 +1296,12 @@ function confirmEndSession() {
 function endGuidedSession() {
   const session = guidedSession();
   const ownsMission = session?.missionId === state.mission.active?.missionId;
+  const ownsSpeaking = speakingAttempt()?.source === "session" && speakingAttempt()?.sessionId === session?.id;
   state = {
     ...state,
     session: { ...state.session, active: null },
-    mission: ownsMission ? { ...state.mission, active: null } : state.mission
+    mission: ownsMission ? { ...state.mission, active: null } : state.mission,
+    speaking: ownsSpeaking ? { ...state.speaking, active: null } : state.speaking
   };
   save();
   show("home");
@@ -1212,6 +1323,161 @@ function renderAbort() {
     { label: "Home", onClick: () => show("home") },
     { label: "Phone sheet", onClick: () => showScenarioChooser("sheet") }
   );
+}
+
+function speakingItemForAttempt(attempt = speakingAttempt()) {
+  return speakingItems.find((item) => item.skillId === attempt?.skillId && item.scenarioIds.includes(attempt.scenarioId)) ?? null;
+}
+
+function beginSoloSpeaking(scenarioId, lineIndex = 0) {
+  const scenario = scenarioById(scenarioId);
+  const line = scenario?.allowedUserLines[lineIndex];
+  const item = speakingItems.find((candidate) => candidate.skillId === line?.skillId && candidate.scenarioIds.includes(scenarioId));
+  if (!item) return show("home");
+  state = {
+    ...state,
+    speaking: { ...state.speaking, active: createSpeakingAttempt(item, Date.now(), { scenarioId, source: "solo" }) }
+  };
+  save();
+  show("speaking-card");
+}
+
+function continueGuidedSpeaking() {
+  const session = guidedSession();
+  if (!session) return show("home");
+  const active = speakingAttempt();
+  if (active?.source === "session" && active.sessionId === session.id) return show("speaking-card");
+  if (session.phase !== "speaking") return resumeGuidedSession();
+  const item = currentSessionSpeakingItem(session, speakingItems);
+  if (!item) return show("session-overview");
+  state = {
+    ...state,
+    speaking: {
+      ...state.speaking,
+      active: createSpeakingAttempt(item, Date.now(), {
+        scenarioId: session.scenarioId,
+        source: "session",
+        sessionId: session.id
+      })
+    }
+  };
+  save();
+  show("speaking-card");
+}
+
+function renderSpeakingCard() {
+  const attempt = speakingAttempt();
+  const item = speakingItemForAttempt(attempt);
+  const scenario = scenarioById(attempt?.scenarioId);
+  if (!attempt || !item || !scenario) return show("home");
+  const isSession = attempt.source === "session";
+  const isAbort = item.isAbort;
+  const stepIndex = isSession ? (guidedSession()?.speakingOutcomes.length ?? 0) + (attempt.grade ? 0 : 1) : null;
+  const heading = attempt.grade
+    ? attempt.grade === "clean" ? "Clean recall." : attempt.grade === "help" ? "Help recorded." : "Miss recorded."
+    : item.meaning;
+  screenHeading(isSession ? "GUIDED · SAY IT" : "SAY IT", heading, attempt.grade
+    ? "This is production evidence only. It never changes objective BKT."
+    : isAbort
+      ? "Say the safety line aloud before revealing it. Target five seconds. Nothing is listening."
+      : "Say the Japanese line aloud before revealing it. Nothing is listening or grading you.");
+  setChrome({
+    title: attempt.grade ? "Spoken observation saved." : "Retrieve before revealing.",
+    context: isSession ? `Guided speaking · ${Math.min(stepIndex, guidedSession()?.speakLineSkillIds.length ?? 2)} of ${guidedSession()?.speakLineSkillIds.length ?? 2}` : `${scenario.title} · speak-first`,
+    progress: attempt.grade ? 0.8 : Number.isFinite(attempt.revealedAt) ? 0.65 : 0.45
+  });
+
+  if (!Number.isFinite(attempt.revealedAt)) {
+    const cue = addDataCard("INTENT");
+    cue.append(element("p", "candidate-text", item.meaning));
+    const timer = element("p", "timer", "0.0s");
+    dom.screen.append(timer);
+    const update = () => {
+      const elapsed = Math.max(0, Date.now() - attempt.startedAt);
+      timer.textContent = isAbort
+        ? `${(elapsed / 1000).toFixed(1)}s · abort target ≤ ${(ABORT_TARGET_MS / 1000).toFixed(0)}s`
+        : `${(elapsed / 1000).toFixed(1)}s · speak before revealing`;
+      timer.classList.toggle("late", isAbort && elapsed > ABORT_TARGET_MS);
+    };
+    update();
+    startTicker(update, 100);
+    return setActions(
+      { label: "Need help", onClick: () => revealActiveSpeaking(true) },
+      { label: "I spoke", onClick: () => revealActiveSpeaking(false) }
+    );
+  }
+
+  const card = element("article", attempt.grade ? "result-card" : "line-card");
+  if (attempt.grade) card.dataset.result = attempt.grade === "clean" ? "correct" : "incorrect";
+  card.append(element("p", attempt.grade ? "result-label" : "candidate-label", attempt.grade
+    ? attempt.grade === "clean" ? "Said cleanly" : attempt.grade === "help" ? "Needed the reveal" : "Could not produce it"
+    : `Compare · ${(attempt.responseMs / 1000).toFixed(1)}s`));
+  const japanese = element("p", "line-japanese");
+  appendJapanese(japanese, item.ja, { alwaysShow: true });
+  card.append(japanese, element("p", "line-meaning", item.meaning));
+  dom.screen.append(card);
+
+  if (!attempt.grade) {
+    dom.screen.append(element("p", "instruction", "Did you say the complete line correctly before the reveal?"));
+    return setActions(
+      { label: "No", onClick: () => gradeActiveSpeaking(false) },
+      { label: "Yes", onClick: () => gradeActiveSpeaking(true) }
+    );
+  }
+
+  return setActions(
+    { label: isSession ? "End session" : "Done", onClick: isSession ? confirmEndSession : finishSpeakingAttempt },
+    { label: isSession ? "Continue" : "Next line", onClick: isSession ? finishSpeakingAttempt : nextSoloSpeaking }
+  );
+}
+
+function revealActiveSpeaking(usedHelp) {
+  state = {
+    ...state,
+    speaking: {
+      ...state.speaking,
+      active: revealSpeakingAttempt(speakingAttempt(), { usedHelp, now: Date.now() })
+    }
+  };
+  save();
+  render();
+}
+
+function gradeActiveSpeaking(correct) {
+  const active = speakingAttempt();
+  const item = speakingItemForAttempt(active);
+  const graded = gradeSpeakingAttempt(active, correct, Date.now());
+  state = applyProductionObservation(state, graded.observation);
+  if (active.source === "session") {
+    state = {
+      ...state,
+      session: {
+        ...state.session,
+        active: recordSessionSpeaking(guidedSession(), item, graded.observation)
+      }
+    };
+  }
+  state = { ...state, speaking: { ...state.speaking, active: graded.attempt } };
+  save();
+  render();
+}
+
+function finishSpeakingAttempt() {
+  const source = speakingAttempt()?.source;
+  state = { ...state, speaking: { ...state.speaking, active: null } };
+  save();
+  if (source === "session") return resumeGuidedSession();
+  show("home");
+}
+
+function nextSoloSpeaking() {
+  const active = speakingAttempt();
+  const scenario = scenarioById(active?.scenarioId);
+  if (!active || !scenario) return finishSpeakingAttempt();
+  const currentIndex = scenario.allowedUserLines.findIndex((line) => line.skillId === active.skillId);
+  state = { ...state, speaking: { ...state.speaking, active: null } };
+  save();
+  beginSoloSpeaking(scenario.id, cycleIndex(currentIndex, scenario.allowedUserLines.length));
 }
 
 function renderSheetLine() {
@@ -1250,14 +1516,16 @@ function resolveFieldDecision(answer) {
   const result = answerFieldDecision(screen.data.step, answer);
   if (result.next) return show("field-question", { scenarioId: screen.data.scenarioId, step: result.next });
   const now = Date.now();
+  const scenarioId = screen.data.scenarioId;
   state = {
     ...state,
     updatedAt: now,
     repair: archiveCompletedRepair(state.repair),
-    field: recordFieldOutcome(state.field, { scenarioId: screen.data.scenarioId, outcome: result.outcome, at: now })
+    field: recordFieldOutcome(state.field, { scenarioId, outcome: result.outcome, at: now }),
+    route: routeAfterFieldOutcome(state.route, { scenarioId, at: now })
   };
   save();
-  show("field-result", { scenarioId: screen.data.scenarioId, outcome: result.outcome });
+  show("field-result", { scenarioId, outcome: result.outcome });
 }
 
 function renderFieldResult() {
@@ -1735,11 +2003,28 @@ function endMission() {
 
 function renderRouteHome() {
   const route = state.route;
-  if (!route?.scenarioId || !route.eventAt || route.eventAt <= Date.now()) return showScenarioChooser("route");
+  if (!route?.scenarioId || !route.eventAt) return showScenarioChooser("route");
   const scenario = scenarioById(route.scenarioId);
+  const status = showtimeStatus(route, state.field);
   const minutes = Math.max(0, Math.round((route.eventAt - Date.now()) / 60000));
-  screenHeading("NEXT REAL EVENT", scenario.title, `About ${minutes} minutes away. Route urgency currently outranks ordinary due-date ordering.`);
-  setChrome({ title: "Route boost is active.", context: "Scheduler priority", progress: 0.7 });
+  screenHeading(
+    status.phase === "field" ? "AFTER THE EVENT" : status.phase === "showtime" ? "SHOWTIME" : "NEXT REAL EVENT",
+    scenario.title,
+    status.phase === "field"
+      ? "The scheduled time has passed. Log the real outcome so practice can respond honestly."
+      : status.phase === "showtime"
+        ? `${minutes} minutes away. Home now opens the phone sheet with the abort line pinned beside it.`
+        : `About ${minutes} minutes away. Route urgency currently outranks ordinary due-date ordering.`
+  );
+  setChrome({ title: status.phase === "field" ? "Close the field loop." : status.phase === "showtime" ? "The prepared exchange is ready." : "Route boost is active.", context: status.phase === "scheduled" ? "Scheduler priority" : "Showtime", progress: status.phase === "scheduled" ? 0.7 : 0.92 });
+  if (status.phase === "field") return setActions(
+    { label: "Clear event", onClick: clearRoute },
+    { label: "Log outcome", onClick: () => show("field-question", { scenarioId: scenario.id, step: FIELD_DECISION_START }) }
+  );
+  if (status.phase === "showtime") return setActions(
+    { label: "Abort line", onClick: () => show("abort") },
+    { label: "Open sheet", onClick: () => show("sheet-line", { scenarioId: scenario.id, lineIndex: 0 }) }
+  );
   setActions(
     { label: "Clear boost", onClick: clearRoute },
     { label: "Change", onClick: () => showScenarioChooser("route") }
@@ -1793,13 +2078,15 @@ function renderMapIsland() {
   setChrome({ title: "Choose one scenario.", context: `${index + 1} of ${choices.length}`, progress: 0.28 });
   if (island.id !== "__back") {
     const orbit = element("div", "progress-orbit");
-    const total = island.phraseTotal + island.facetTotal;
-    const ready = island.phraseReady + island.facetReady;
+    const total = island.recognizeTotal + island.sayTotal;
+    const ready = island.recognizeReady + island.sayReady;
     orbit.style.setProperty("--value", `${ready / Math.max(1, total) * 360}deg`);
     orbit.append(element("span", "", `${ready}/${total}`));
     dom.screen.append(orbit);
     addMeta(
-      `${island.phraseReady}/${island.phraseTotal} phrases`,
+      island.conversationReady ? "conversation ready" : "conversation not ready",
+      `${island.recognizeReady}/${island.recognizeTotal} recognize-ready`,
+      `${island.sayReady}/${island.sayTotal} say-ready`,
       `${island.facetReady}/${island.facetTotal} word facets`,
       `${island.readingReady}/${island.readingTotal} sounds retired`
     );
@@ -1849,6 +2136,7 @@ function renderMapSkill() {
       skill.status,
       `${skill.knownPercent}% average BKT`,
       `${skill.attempts} checks`,
+      skill.fixedLine ? `${skill.productionAttempts} spoken · ${skill.sayReady ? "say-ready" : "needs speaking"}` : null,
       skill.word ? `${skill.facetReady}/${skill.facetTotal} facets ready` : `${skill.prerequisites.length} prerequisites`
     );
     const label = dom.screen.querySelector(".screen-title");
@@ -1867,8 +2155,22 @@ function renderMapSkill() {
   }
   setActions(
     { label: "Next skill →", onClick: () => show("map-skill", { scenarioId: scenario.id, index: cycleIndex(index, skills.length) }) },
-    { label: skill.back ? "Back" : skill.word ? "Practice weakest" : "Practice", onClick: () => skill.back ? show("map-island", { index: 0 }) : focusSkill(skill.targetSkillId ?? skill.id) }
+    {
+      label: skill.back ? "Back" : skill.word ? "Practice weakest" : skill.fixedLine && !skill.sayReady ? "Practice speaking" : "Practice",
+      onClick: () => skill.back
+        ? show("map-island", { index: 0 })
+        : skill.fixedLine && !skill.sayReady
+          ? beginSkillSpeaking(scenario.id, skill.id)
+          : focusSkill(skill.targetSkillId ?? skill.id)
+    }
   );
+}
+
+function beginSkillSpeaking(scenarioId, skillId) {
+  const scenario = scenarioById(scenarioId);
+  const index = scenario?.allowedUserLines.findIndex((line) => line.skillId === skillId) ?? -1;
+  if (index < 0) return showToast("No fixed line found");
+  beginSoloSpeaking(scenarioId, index);
 }
 
 function focusSkill(skillId) {
@@ -2290,6 +2592,7 @@ async function previewPrivateOverlayFile(file) {
     validateSkillGraph(mergedTree);
     validateMissionPack(merged.missionPack, merged.content, mergedTree);
     flattenItems(merged.content, merged.readings);
+    validateSpeakingItems(buildSpeakingItems(merged.content), mergedTree);
     overlayDraft = { overlay, fileName: file.name };
     show("overlay-preview");
   } catch (error) {
@@ -2361,6 +2664,7 @@ function render() {
     case "session-intro": return renderSessionIntro();
     case "session-overview": return renderSessionOverview();
     case "session-summary": return renderSessionSummary();
+    case "speaking-card": return renderSpeakingCard();
     case "abort": return renderAbort();
     case "sheet-line": return renderSheetLine();
     case "field-question": return renderFieldQuestion();
@@ -2437,6 +2741,8 @@ async function start() {
     validateMissionPack(missionPack, content, tree);
     missionLines = missionLineIndex(content);
     items = flattenItems(content, readings);
+    speakingItems = buildSpeakingItems(content);
+    validateSpeakingItems(speakingItems, tree);
     state = loadState(tree);
     repairActivityState();
 

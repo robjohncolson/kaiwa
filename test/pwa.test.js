@@ -29,6 +29,8 @@ test("manifest assets exist and the offline shell covers browser dependencies", 
     "src/readings.js",
     "src/scheduler.js",
     "src/session.js",
+    "src/showtime.js",
+    "src/speaking.js",
     "src/store.js",
     "src/ui.js",
     "src/wizard.js"

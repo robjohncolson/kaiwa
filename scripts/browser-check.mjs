@@ -290,9 +290,18 @@ async function run() {
       check(Boolean(await js(`document.querySelector(".practice-reason")?.textContent.includes("WHY THIS CARD")`)), "practice card explains why it was selected");
       await answerCard(true);
       check(Boolean(await js(`document.querySelector(".practice-reason")`)), "selection reason remains visible with feedback");
-      const next = (await actions()).find((button) => !button.disabled && ["Next card", "Speak next"].includes(button.label));
+      const next = (await actions()).find((button) => !button.disabled && ["Next card", "Speak next", "Say next", "Check a word", "Start mission"].includes(button.label));
       if (!next) throw new Error("Card feedback has no forward action.");
       await click(next.label);
+    };
+    const finishSpeakingLine = async (nextLabel = "Continue") => {
+      check(await js(`document.querySelector(".line-japanese") === null`), "speak-first prompt hides the Japanese line");
+      check(Boolean(await js(`document.querySelector(".screen-copy")?.textContent.includes("Nothing is listening")`)), "speak-first prompt states that no microphone listens");
+      await click("I spoke");
+      check(Boolean(await js(`document.querySelector(".line-japanese")?.textContent.trim()`)), "speaking reveal shows the fixed Japanese line");
+      await click("Yes");
+      check(Boolean(await js(`document.querySelector(".result-label")?.textContent.includes("Said cleanly")`)), "clean spoken recall is saved separately");
+      await click(nextLabel);
     };
     const finishProductionMission = async () => {
       for (let turn = 0; turn < 12; turn += 1) {
@@ -410,8 +419,10 @@ async function run() {
     await eventually(async () => actionLabel("Menu"), "Home did not return after the kanji-component check");
 
     // A normal card miss opens a persisted recursive component -> integration cycle.
+    await js(`(() => { window.__kaiwaNativeRandom = window.__kaiwaNativeRandom || Math.random; Math.random = () => 0; })()`);
     await navigateTool("One quick card");
     await answerCard(false);
+    await js(`Math.random = window.__kaiwaNativeRandom`);
     check(Boolean(await js(`document.querySelector(".result-card")?.textContent.includes("WHAT THAT ANSWER SUGGESTS")`)), "a diagnosed distractor explains which nodes it implicates");
     check(await actionLabel("Break it down"), "a wrong whole-card answer offers decomposition");
     await click("Break it down");
@@ -502,18 +513,39 @@ async function run() {
     await cdp.send("Page.reload", {}, sessionId);
     await eventually(async () => actionLabel("Start practice"), "Home did not return after the word-facet map check");
 
+    // Every fixed line has standalone speak-first practice with no BKT mutation.
+    await navigateTool("Speak a fixed line");
+    await click("Choose");
+    const beforeSpeaking = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); const skill = state.skills["polite.basics"] || {}; return { attempts: skill.attempts || 0, totalProduction: state.totalProduction }; })()`);
+    await finishSpeakingLine("Next line");
+    const afterSpeaking = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); const skill = state.skills["polite.basics"]; return { attempts: skill.attempts, totalProduction: state.totalProduction, grade: skill.production.lastGrade }; })()`);
+    check(afterSpeaking.attempts === beforeSpeaking.attempts && afterSpeaking.totalProduction === beforeSpeaking.totalProduction + 1 && afterSpeaking.grade === "clean", "standalone speech updates production without changing BKT attempts");
+    await click("Need help");
+    await click("Yes");
+    await click("Done");
+
+    // Showtime takes over Home immediately before and after a scheduled event.
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.route = { scenarioId: "hotel-refund", eventAt: Date.now() + 20 * 60 * 1000 }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Open sheet"), "Showtime did not surface the phone sheet");
+    check(await actionLabel("Abort line"), "Showtime pins the abort beside the phone sheet");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.route.eventAt = Date.now() - 1; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Log outcome"), "Post-event Showtime did not surface the field log");
+    check(await actionLabel("Phone sheet"), "post-event handoff keeps the phone sheet available");
+    await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); state.route = { scenarioId: null, eventAt: null }; localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, JSON.stringify(state)); })()`);
+    await cdp.send("Page.reload", {}, sessionId);
+    await eventually(async () => actionLabel("Start practice"), "Home did not return after Showtime check");
+
     // Full guided loop at a common modern phone size.
     await click("Start practice");
     await click("Start");
-    for (let card = 0; card < 6; card += 1) {
-      if (card === 3) {
-        check(await title() === "Match the word to its reading.", "reading card explains the task");
-        check(Boolean(await js(`document.querySelector(".screen-meta")?.textContent.includes("Written form → hiragana")`)), "reading card names the written-form to hiragana mapping");
-        check(Boolean(await js(`document.querySelector(".candidate-card .candidate-label")?.textContent.includes("Possible reading")`)), "hiragana option is labeled as a possible reading");
-        check(await js(`[...document.querySelectorAll(".prompt-japanese rt")].every(rt => rt.getAttribute("aria-hidden") === "true" && getComputedStyle(rt).visibility === "hidden")`), "reading prompt does not reveal its furigana");
-      }
-      await finishCard();
-    }
+    await finishCard();
+    await finishCard();
+    await finishSpeakingLine();
+    await finishSpeakingLine();
+    await finishCard();
+    await finishCard();
     check(await title() === "Cards complete. Speak now.", "guided cards advance into the spoken loop");
     await click("Start mission");
     await finishProductionMission();
@@ -524,15 +556,23 @@ async function run() {
     // Forced misses remain bounded: session cards finish and their breakdowns queue behind the session.
     await click("View session");
     await click("Again");
-    for (let card = 0; card < 6; card += 1) {
+    for (let card = 0; card < 2; card += 1) {
       await answerCard(false);
-      const forward = card === 5 ? "Speak next" : "Next card";
+      const forward = card === 1 ? "Say next" : "Next card";
       check(await actionLabel(forward), `forced miss ${card + 1} keeps the guided path moving`);
       await click(forward);
     }
-    check(await title() === "Cards complete. Speak now.", "six forced misses still complete the card phase");
+    await finishSpeakingLine();
+    await finishSpeakingLine();
+    for (let card = 0; card < 2; card += 1) {
+      await answerCard(false);
+      const forward = card === 1 ? "Start mission" : "Check a word";
+      check(await actionLabel(forward), `forced facet miss ${card + 1} keeps the guided path moving`);
+      await click(forward);
+    }
+    check(await title() === "Cards complete. Speak now.", "four forced objective misses still complete the practice phase");
     const queuedBreakdowns = await js(`(() => { const state = JSON.parse(localStorage.getItem(${JSON.stringify(STORAGE_KEY)})); return { active: state.breakdown.active, queued: state.breakdown.queued.length }; })()`);
-    check(queuedBreakdowns.active === null && queuedBreakdowns.queued === 6, "session misses queue six repairs without modal preemption");
+    check(queuedBreakdowns.active === null && queuedBreakdowns.queued === 4, "session misses queue four repairs without modal preemption");
     await click("Start mission");
     await finishProductionMission();
     await click("Home");

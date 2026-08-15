@@ -8,6 +8,8 @@ import {
   wordRecallSkillId
 } from "./readings.js";
 import { isSkillUnlocked, prerequisitesFor } from "./scheduler.js";
+import { productionIsReady } from "./production.js";
+import { buildSpeakingItems, speakingItemsForScenario, speakingReadiness } from "./speaking.js";
 
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 64;
@@ -147,6 +149,7 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
     scenario.items.map((item) => ({ ...item, scenarioId: scenario.id }))
   );
   const itemBySkill = new Map();
+  const speakingItems = buildSpeakingItems(content);
   for (const item of allItems) {
     if (!itemBySkill.has(item.skillId)) itemBySkill.set(item.skillId, item);
   }
@@ -154,6 +157,8 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
   const islands = content.scenarios.map((scenario) => {
     const skillIds = [...new Set(scenario.items.map((item) => item.skillId))];
     const scenarioSet = new Set(skillIds);
+    const fixedLines = speakingItemsForScenario(speakingItems, scenario.id);
+    const fixedLineIds = new Set(fixedLines.map((line) => line.skillId));
     const nodes = skillIds.map((id) => {
       const skill = state.skills[id];
       const prerequisites = prerequisitesFor(tree, id);
@@ -163,6 +168,9 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
         status: mapSkillStatus(tree, state, id),
         knownPercent: Math.round(probabilityKnown(skill) * 100),
         attempts: skill?.attempts ?? 0,
+        fixedLine: fixedLineIds.has(id),
+        sayReady: fixedLineIds.has(id) && productionIsReady(skill),
+        productionAttempts: skill?.production?.attempts ?? 0,
         due: Boolean(skill && skill.cramDue <= Date.now()),
         prerequisites,
         externalPrerequisiteCount: prerequisites.filter((parentId) => !scenarioSet.has(parentId)).length,
@@ -208,6 +216,8 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
       || a.term.localeCompare(b.term));
     const facetReady = words.reduce((total, word) => total + word.ready, 0);
     const facetTotal = words.reduce((total, word) => total + word.total, 0);
+    const recognizeReady = fixedLines.filter((line) => skillIsReady(tree, state.skills[line.skillId])).length;
+    const say = speakingReadiness(speakingItems, state, { scenarioId: scenario.id });
 
     return {
       id: scenario.id,
@@ -219,6 +229,13 @@ export function buildSkillMap({ content, tree, readings, state, currentItem }) {
       readingTotal: readingStats.length,
       facetReady,
       facetTotal,
+      recognizeReady,
+      recognizeTotal: fixedLines.length,
+      sayReady: say.ready,
+      sayTotal: say.total,
+      conversationReady: fixedLines.length > 0
+        && recognizeReady === fixedLines.length
+        && say.complete,
       words,
       weakestReadings: readingStats.slice(0, 3).map(({ entry }) => ({
         id: entry.id,

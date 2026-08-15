@@ -80,9 +80,35 @@ test("real map covers every phrase and groups four BKT facets per word", async (
   assert.equal(map.current.skillId, currentItem.skillId);
   if (currentItem.mode === "reading") assert.equal(map.current.label, currentItem.prompt);
   assert.ok(map.islands.every((island) => island.readingReady <= island.readingTotal));
+  assert.ok(map.islands.every((island) => island.recognizeReady <= island.recognizeTotal));
+  assert.ok(map.islands.every((island) => island.sayReady <= island.sayTotal));
+  assert.ok(map.islands.every((island) => island.conversationReady === (
+    island.recognizeReady === island.recognizeTotal && island.sayReady === island.sayTotal
+  )));
+  assert.ok(map.islands.flatMap((island) => island.nodes).some((node) => node.fixedLine && !node.sayReady));
   assert.equal(map.islands.reduce((total, island) => total + island.readingTotal, 0), readings.entries.length);
   assert.equal(map.islands.reduce((total, island) => total + island.facetTotal, 0), readings.entries.length * 4);
   assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.length === 4));
   assert.ok(map.islands.flatMap((island) => island.words).every((word) => word.facets.map((facet) => facet.direction).join(" ").includes("Meaning → Japanese")));
   assert.ok(map.islands.some((island) => island.weakestReadings.length === 3));
+
+  const essentials = content.scenarios.find((scenario) => scenario.id === "essentials");
+  for (const { skillId } of essentials.allowedUserLines) {
+    Object.assign(state.skills[skillId], {
+      pKnown: 0.9,
+      lastSpacedCardCorrectAt: NOW,
+      lastCardObservedAt: NOW,
+      lastCardOutcome: "correct"
+    });
+    state.skills[skillId].observations.card.correct = 2;
+    state.skills[skillId].production.streak = 2;
+  }
+  let readyEssentials = buildSkillMap({ content, tree, readings, state, currentItem }).islands
+    .find((island) => island.id === "essentials");
+  assert.equal(readyEssentials.conversationReady, true);
+  state.skills[essentials.allowedUserLines[0].skillId].production.streak = 0;
+  readyEssentials = buildSkillMap({ content, tree, readings, state, currentItem }).islands
+    .find((island) => island.id === "essentials");
+  assert.equal(readyEssentials.recognizeReady, readyEssentials.recognizeTotal);
+  assert.equal(readyEssentials.conversationReady, false);
 });

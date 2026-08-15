@@ -1,7 +1,7 @@
 import { emptyProductionEvidence } from "./production.js";
 
 export const STORAGE_KEY = "kaiwa.practice-state.v1";
-export const STATE_VERSION = 11;
+export const STATE_VERSION = 12;
 export const BACKUP_FORMAT_VERSION = 2;
 export const MAX_BACKUP_BYTES = 2_000_000;
 const SUPPORTED_STATE_VERSIONS = Object.freeze(Array.from({ length: STATE_VERSION }, (_, index) => index + 1));
@@ -56,6 +56,7 @@ export function createInitialState(tree, now = Date.now()) {
     lastItemId: null,
     route: { scenarioId: null, eventAt: null },
     focus: { scenarioId: null, skillId: null, mode: null },
+    speaking: { active: null },
     mission: { active: null, stats: {} },
     session: { active: null, recent: [] },
     repair: { active: null, recent: [] },
@@ -176,6 +177,9 @@ function mergeWithCurrentTree(candidate, tree, now) {
     version: STATE_VERSION,
     route: { ...initial.route, ...candidate.route },
     focus: { ...initial.focus, ...candidate.focus },
+    speaking: {
+      active: candidate.speaking?.active ?? null
+    },
     mission: {
       active: candidate.mission?.active ? {
         mode: "recognition",
@@ -190,6 +194,10 @@ function mergeWithCurrentTree(candidate, tree, now) {
     session: {
       active: candidate.session?.active ? {
         ...candidate.session.active,
+        recognitionCardIds: candidate.session.active.recognitionCardIds ?? [],
+        facetCardIds: candidate.session.active.facetCardIds ?? [],
+        speakLineSkillIds: candidate.session.active.speakLineSkillIds ?? [],
+        speakingOutcomes: candidate.session.active.speakingOutcomes ?? [],
         facetSkillIds: candidate.session.active.facetSkillIds
           ?? candidate.session.active.readingSkillIds
           ?? [],
@@ -197,7 +205,8 @@ function mergeWithCurrentTree(candidate, tree, now) {
           ...candidate.session.active.baseline,
           facetReadySkillIds: candidate.session.active.baseline?.facetReadySkillIds
             ?? candidate.session.active.baseline?.readingReadySkillIds
-            ?? []
+            ?? [],
+          productionReadySkillIds: candidate.session.active.baseline?.productionReadySkillIds ?? []
         }
       } : null,
       recent: Array.isArray(candidate.session?.recent) ? candidate.session.recent.slice(-10) : []
